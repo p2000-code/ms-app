@@ -6,7 +6,8 @@ import concurrent.futures
 import streamlit as st
 import gc
 import base64
-import streamlit.components.v1 as components # ייבוא חדש לכפתור המיוחד
+import pandas as pd
+import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
 from pypdf import PdfWriter
 from weasyprint import HTML
@@ -19,6 +20,25 @@ logging.getLogger('fontTools').setLevel(logging.WARNING)
 logging.getLogger('weasyprint').setLevel(logging.WARNING)
 
 # --- פונקציות עזר ---
+
+@st.cache_data
+def load_catalog():
+    file_name = 'catalog.csv'
+    if os.path.exists(file_name):
+        try:
+            # קורא רק את העמודות הרלוונטיות (A=0, B=1, C=2, R=17)
+            df = pd.read_csv(file_name, usecols=[0, 1, 2, 17], header=None, skiprows=1, encoding='utf-8')
+            df.columns = ['ms_id', 'shelf', 'desc', 'pages']
+            # ניקוי נתונים
+            df['ms_id'] = df['ms_id'].astype(str).str.strip()
+            return df
+        except Exception as e:
+            st.error(f"⚠️ שגיאה בקריאת קובץ הקטלוג: {e}")
+            return None
+    return None
+
+df_catalog = load_catalog()
+
 def get_manuscript_metadata(ms_id):
     url = f"https://chabadlibrary.org/catalog/index1.php?frame=main&catalog=mscatalog&mode=details&volno={ms_id}&limit=0&search_mode=simple"
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -36,16 +56,12 @@ def get_manuscript_metadata(ms_id):
         if "מדור ומדף:" in line:
             metadata["מדור ומדף"] = line.split("מדור ומדף:")[1].strip()
             continue
-        if line.startswith("מס' כרטיס"):
-            continue
         metadata["תיאור"].append(line)
         
     return metadata
 
 def create_cover_page_html(metadata, output_filename, range_text=""):
     desc_html = "".join([f"<p>{line}</p>" for line in metadata['תיאור']])
-    
-    # תוספת טקסט אם נבחר טווח עמודים
     range_html = f"<h3 style='color: #555;'>{range_text}</h3>" if range_text else ""
     
     html_content = f"""
@@ -93,7 +109,6 @@ def download_single_page(page_num, base_url, max_retries=3):
                 continue
             return page_num, None, str(e)
 
-# הפונקציה החדשה לפתיחה בכרטיסייה חדשה
 def open_pdf_in_new_tab(file_path, ms_id):
     with open(file_path, "rb") as f:
         base64_pdf = base64.b64encode(f.read()).decode('utf-8')
@@ -112,14 +127,35 @@ def open_pdf_in_new_tab(file_path, ms_id):
     """
     components.html(html_code, height=60)
 
-# --- ממשק המשתמש של Streamlit ---
+# --- ממשק המשתמש ---
 st.title("📚 הורדת כתבי יד - ספריית חב\"ד")
-st.markdown("הכנס את מספר כתב היד, והמערכת תייצר עבורך קובץ PDF מסודר להורדה וצפייה.")
 
 ms_id_input = st.text_input("הכנס מספר כתב יד (למשל: 1102):")
 
-# בחירת טווח עמודים
-specific_range = st.checkbox("הורדת טווח עמודים ספציפי (במקום הספר השלם)")
+# חיפוש והצגה מהקטלוג
+if ms_id_input and df_catalog is not None:
+    ms_id_clean = ms_id_input.strip()
+    row = df_catalog[df_catalog['ms_id'] == ms_id_clean]
+    
+    if not row.empty:
+        ms_desc = row['desc'].values[0]
+        ms_shelf = row['shelf'].values[0]
+        ms_pages = row['pages'].values[0]
+        
+        st.info(f"📍 **מדור ומדף:** {ms_shelf}  \n📄 **תיאור:** {ms_desc}  \n🔢 **מספר דפים:** {ms_pages}")
+        
+        # בדיקה אם כתב היד ריק
+        try:
+            p_val = int(float(ms_pages))
+            if p_val == 0:
+                st.error("⚠️ כתב יד זה מסומן כריק במערכת. לא ניתן להוריד.")
+                st.stop()
+        except:
+            pass
+    else:
+        st.warning("מספר כתב היד לא נמצא בקטלוג המקומי, אך ניתן לנסות להוריד.")
+
+specific_range = st.checkbox("הורדת טווח עמודים ספציפי")
 start_page_input, end_page_input = 1, 10 
 
 if specific_range:
@@ -131,130 +167,90 @@ if specific_range:
 
 start_button = st.button("הכן ספר להורדה", type="primary")
 
-# --- תהליך ההורדה ---
+# --- תהליך ההורדה (נוסחה ישנה - כתיבה לדיסק) ---
 if start_button and ms_id_input:
     ms_id = ms_id_input.strip()
     
-    if specific_range and start_page_input > end_page_input:
-        st.error("שגיאה: עמוד ההתחלה לא יכול להיות גדול מעמוד הסיום.")
-        st.stop()
-        
-    with st.spinner('אוסף נתונים ובונה דף שער...'):
-        start_time = time.time() 
+    with st.spinner('מכין את הספר...'):
+        start_time = time.time()
         metadata = get_manuscript_metadata(ms_id)
         
-        range_text = f"חלק ספציפי: עמודים {start_page_input} עד {end_page_input}" if specific_range else ""
-        cover_pdf = f"cover_page_{ms_id}.pdf"
+        range_text = f"עמודים {start_page_input} עד {end_page_input}" if specific_range else ""
+        cover_pdf = f"cover_{ms_id}.pdf"
         create_cover_page_html(metadata, cover_pdf, range_text)
         
         base_url = f"https://s3.wasabisys.com/chabadlibrary/ms/{ms_id}/{ms_id}_page_"
-        
-        chunk_files = [cover_pdf] 
+        chunk_files = [cover_pdf]
         
         current_page = start_page_input if specific_range else 1
         target_end_page = end_page_input if specific_range else float('inf')
-        
         keep_downloading = True
-        download_batch_size = 25 
         
     status_text = st.empty()
     progress_bar = st.progress(0)
     
     while keep_downloading and current_page <= target_end_page:
-        batch_end = min(current_page + download_batch_size - 1, target_end_page)
+        batch_size = 25
+        batch_end = min(current_page + batch_size - 1, target_end_page)
         
-        status_text.info(f"מוריד ומעבד עמודים {current_page} עד {int(batch_end)}...")
+        status_text.info(f"מוריד עמודים {current_page} עד {int(batch_end)}...")
         results = []
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=download_batch_size) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=batch_size) as executor:
             futures = {executor.submit(download_single_page, p, base_url): p for p in range(current_page, int(batch_end) + 1)}
             for future in concurrent.futures.as_completed(futures):
                 results.append(future.result())
         
-        results.sort(key=lambda x: x[0]) 
+        results.sort(key=lambda x: x[0])
         
         chunk_merger = PdfWriter()
-        temp_single_pages = []
+        temp_files_to_delete = []
         
         for page_num, content, status in results:
             if content is None:
                 if status == 404:
-                    status_text.success(f"הגענו לסוף הספר (סה\"כ {page_num - 1} עמודים זמינים).")
-                else:
-                    st.error(f"⚠️ שגיאה בעמוד {page_num}: {status}")
+                    status_text.success("הגענו לסוף הספר.")
                 keep_downloading = False
-                break 
+                break
             
-            temp_pdf = f"temp_page_{page_num}_{ms_id}.pdf"
-            with open(temp_pdf, 'wb') as f:
+            # כתיבה לדיסק (הנוסחה הישנה)
+            temp_name = f"temp_{ms_id}_{page_num}.pdf"
+            with open(temp_name, 'wb') as f:
                 f.write(content)
+            chunk_merger.append(temp_name)
+            temp_files_to_delete.append(temp_name)
             
-            chunk_merger.append(temp_pdf)
-            temp_single_pages.append(temp_pdf)
-        
-        if temp_single_pages:
-            chunk_filename = f"chunk_{current_page}_to_{current_page + len(temp_single_pages) - 1}_{ms_id}.pdf"
-            chunk_merger.write(chunk_filename)
-            chunk_files.append(chunk_filename)
-        
+        if temp_files_to_delete:
+            chunk_name = f"chunk_{ms_id}_{current_page}.pdf"
+            chunk_merger.write(chunk_name)
+            chunk_files.append(chunk_name)
+            
         chunk_merger.close()
-        
-        for temp_pdf in temp_single_pages:
-            if os.path.exists(temp_pdf): os.remove(temp_pdf)
-            
-        gc.collect() 
+        for f in temp_files_to_delete:
+            if os.path.exists(f): os.remove(f)
         
         current_page = int(batch_end) + 1
-        
-        if specific_range:
-            total_pages_to_download = end_page_input - start_page_input + 1
-            pages_done = current_page - start_page_input
-            progress_bar.progress(min(pages_done / total_pages_to_download, 1.0))
-        else:
-            progress_bar.progress(min(current_page / 1000, 1.0)) 
-        
-        if keep_downloading and current_page <= target_end_page:
-            time.sleep(1.5)
+        progress_bar.progress(min(current_page / 500, 1.0)) # הערכה גסה לסרגל
+        time.sleep(1)
 
-    status_text.info("מחבר את כל המקבצים לקובץ אחד, אנא המתן...")
+    # איחוד סופי
+    final_output = f"Manuscript_{ms_id}.pdf"
     final_merger = PdfWriter()
-    for chunk_file in chunk_files:
-        final_merger.append(chunk_file)
-        
-    final_output = f"Manuscript_{ms_id}_Complete.pdf"
+    for f in chunk_files:
+        final_merger.append(f)
     final_merger.write(final_output)
     final_merger.close()
     
-    for chunk_file in chunk_files:
-        if os.path.exists(chunk_file): os.remove(chunk_file)
-    gc.collect()
-            
-    total_time = round(time.time() - start_time, 2)
-    progress_bar.empty()
-    status_text.empty()
-    st.success(f"✅ הספר {ms_id} מוכן! (זמן בנייה: {total_time} שניות)")
-    
-    st.write("---")
-    
-    # הצגת הכפתורים זה לצד זה
-    col_dl, col_view = st.columns(2)
-    
-    with col_dl:
-        # כפתור הורדה רגיל
-        with open(final_output, "rb") as pdf_file:
-            PDFbyte = pdf_file.read()
-            
-        st.download_button(
-            label="📥 הורד קובץ למחשב",
-            data=PDFbyte,
-            file_name=final_output,
-            mime='application/octet-stream',
-            use_container_width=True
-        )
+    for f in chunk_files:
+        if os.path.exists(f): os.remove(f)
         
+    st.success(f"✅ הספר מוכן!")
+    
+    col_dl, col_view = st.columns(2)
+    with col_dl:
+        with open(final_output, "rb") as f:
+            st.download_button("📥 הורד קובץ", f, file_name=final_output)
     with col_view:
-        # כפתור פתיחה בכרטיסייה חדשה
         open_pdf_in_new_tab(final_output, ms_id)
-
-    # ניקוי מהשרת לאחר שהנתונים נטענו
+    
     if os.path.exists(final_output): os.remove(final_output)
