@@ -1,5 +1,6 @@
 streamlit
-weasyprint
-pypdf
-beautifulsoup4
 requests
+beautifulsoup4
+pypdf
+weasyprint
+pandas
