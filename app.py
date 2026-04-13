@@ -191,7 +191,7 @@ if specific_range:
     with c1: start_page = st.number_input("עמוד התחלה", min_value=1, value=1)
     with c2: end_page = st.number_input("עמוד סיום", min_value=1, value=10)
 
-if st.button("הכן ספר להורדה 📥", type="primary"):
+if st.button("הורד 📥", type="primary"):
     if not ms_id_input:
         st.warning("אנא הכנס מספר כתב יד.")
     else:
