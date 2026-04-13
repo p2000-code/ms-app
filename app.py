@@ -130,23 +130,59 @@ def download_single_page(page_num, base_url, max_retries=3):
     return page_num, None, 500
 
 def open_pdf_in_new_tab(file_path, ms_id):
-    """כפתור לפתיחת ה-PDF בכרטיסייה חדשה"""
-    with open(file_path, "rb") as f:
-        base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-    
-    html_code = f"""
-    <button onclick="
-        var win = window.open('', '_blank');
-        if(win) {{
-            win.document.write('<title>כתב יד {ms_id}</title><iframe src=\\'data:application/pdf;base64,{base64_pdf}\\' frameborder=\\'0\\' style=\\'border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%; position:absolute;\\'></iframe>');
-        }} else {{
-            alert('נא לאפשר חלונות קופצים בדפדפן כדי לצפות בקובץ.');
-        }}
-    " style="cursor: pointer; padding: 10px 20px; color: white; background-color: #2b2b36; border: 1px solid #4a4a5a; border-radius: 5px; font-size: 16px; font-weight: bold; width: 100%; height: 45px;">
-        👁️ צפה בכתב היד בחלונית חדשה
-    </button>
-    """
-    components.html(html_code, height=60)
+    """כפתור לפתיחת ה-PDF בכרטיסייה חדשה - משופר עם Blob"""
+    try:
+        with open(file_path, "rb") as f:
+            base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+        
+        # קוד HTML ו-JavaScript שהופך את ה-Base64 ל-Blob (אובייקט קובץ של הדפדפן)
+        # זה עוקף את מגבלות הגודל והאבטחה של פתיחת Base64 ישירות ב-URL
+        html_code = f"""
+        <button id="viewBtn" style="
+            cursor: pointer;
+            padding: 10px 20px;
+            color: white;
+            background-color: #2b2b36;
+            border: 1px solid #4a4a5a;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            width: 100%;
+            height: 50px;
+            font-family: sans-serif;
+            box-shadow: 0px 2px 5px rgba(0,0,0,0.2);">
+             👁️ פתח כתב יד בכרטיסייה חדשה
+        </button>
+
+        <script>
+        document.getElementById('viewBtn').onclick = function() {{
+            // שינוי הטקסט כדי שהמשתמש יראה שזה מעבד קובץ גדול
+            var btn = this;
+            btn.innerHTML = "⌛ מכין קובץ לצפייה, אנא המתן...";
+            
+            // המרה חכמה ומהירה ל-Blob בעזרת פקודת fetch
+            fetch("data:application/pdf;base64,{base64_pdf}")
+                .then(res => res.blob())
+                .then(blob => {{
+                    // יצירת URL מקומי זמני בתוך הדפדפן (ללא מגבלת אורך)
+                    const blobUrl = URL.createObjectURL(blob);
+                    window.open(blobUrl, '_blank');
+                    
+                    // החזרת הטקסט לכפתור
+                    btn.innerHTML = "👁️ פתח כתב יד בכרטיסייה חדשה";
+                }})
+                .catch(err => {{
+                    console.error("Error opening PDF: ", err);
+                    alert("הקובץ כבד מדי לזיכרון של הדפדפן הספציפי הזה. נסה להשתמש בכפתור ההורדה.");
+                    btn.innerHTML = "👁️ פתח כתב יד בכרטיסייה חדשה";
+                }});
+        }};
+        </script>
+        """
+        components.html(html_code, height=70)
+        
+    except Exception as e:
+        st.error(f"שגיאה בהכנת כפתור הצפייה: {e}")
 
 # --- ממשק המשתמש ---
 
