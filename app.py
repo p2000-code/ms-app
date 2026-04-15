@@ -11,14 +11,14 @@ import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
 from pypdf import PdfWriter
 from weasyprint import HTML
+from datetime import datetime
 
 # 1. הגדרות תצוגה
 st.set_page_config(page_title="הורדת ספרי חב\"ד", page_icon="📚", layout="centered")
 
-# 2. הזרקת קוד לתרגום הוראת ה-Enter לעברית ועיצוב הממשק
+# 2. עיצוב הממשק ותרגום הוראות
 st.markdown("""
     <style>
-        /* תרגום ההוראה מתחת לתיבת הקלט */
         div[data-testid="InputInstructions"] > span:nth-child(1) {
             visibility: hidden;
         }
@@ -29,7 +29,6 @@ st.markdown("""
             color: #666;
             font-size: 14px;
         }
-        /* כיוון טקסט כללי לימין */
         .stMarkdown, .stText, .stInfo, .stError {
             direction: rtl;
             text-align: right;
@@ -37,19 +36,16 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# השתקת הודעות מערכת מיותרות
 logging.getLogger('fontTools').setLevel(logging.WARNING)
 logging.getLogger('weasyprint').setLevel(logging.WARNING)
 
-# --- פונקציות עזר ---
+# --- פונקציות עזר ללוגיקה של האפליקציה ---
 
 @st.cache_data
 def load_catalog():
-    """טעינת נתוני הקטלוג מהקובץ שהעלית"""
     file_name = 'catalog.csv'
     if os.path.exists(file_name):
         try:
-            # קורא עמודות: A(0), B(1), C(2), R(17)
             df = pd.read_csv(file_name, usecols=[0, 1, 2, 17], header=None, skiprows=1, encoding='utf-8')
             df.columns = ['ms_id', 'shelf', 'desc', 'pages']
             df['ms_id'] = df['ms_id'].astype(str).str.strip()
@@ -62,7 +58,6 @@ def load_catalog():
 df_catalog = load_catalog()
 
 def get_manuscript_metadata(ms_id):
-    """שליפת מטא-דאטה מהאתר עבור דף השער"""
     url = f"https://chabadlibrary.org/catalog/index1.php?frame=main&catalog=mscatalog&mode=details&volno={ms_id}&limit=0&search_mode=simple"
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
@@ -85,7 +80,6 @@ def get_manuscript_metadata(ms_id):
         return {"מספר כתב יד": str(ms_id), "מדור ומדף": "לא נמצא", "תיאור": ["לא ניתן היה לשלוף תיאור מלא מהאתר"]}
 
 def create_cover_page_html(metadata, output_filename, range_text=""):
-    """יצירת דף השער ב-PDF"""
     desc_html = "".join([f"<p>{line}</p>" for line in metadata['תיאור']])
     range_html = f"<h3 style='color: #555;'>{range_text}</h3>" if range_text else ""
     
@@ -115,7 +109,6 @@ def create_cover_page_html(metadata, output_filename, range_text=""):
     HTML(string=html_content).write_pdf(output_filename)
 
 def download_single_page(page_num, base_url, max_retries=3):
-    """הורדת עמוד בודד מהשרת"""
     url = f"{base_url}{page_num}.pdf"
     for attempt in range(max_retries):
         try:
@@ -130,7 +123,6 @@ def download_single_page(page_num, base_url, max_retries=3):
     return page_num, None, 500
 
 def open_pdf_in_new_tab(file_path, ms_id):
-    """כפתור לפתיחת ה-PDF בכרטיסייה חדשה"""
     with open(file_path, "rb") as f:
         base64_pdf = base64.b64encode(f.read()).decode('utf-8')
     
@@ -148,39 +140,45 @@ def open_pdf_in_new_tab(file_path, ms_id):
     """
     components.html(html_code, height=60)
 
-# --- פונקציית הקסם: שליחה חשאית לטופס גוגל ---
+# --- פונקציית הרישום המעודכנת לטופס גוגל ---
+
 def log_to_google_form(ms_id, pages_range, processing_time):
-    """שולח את הנתונים ל-Google Sheets דרך טופס פשוט ללא צורך בהרשאות"""
+    """שליחה לטופס גוגל עם כתב נקייה והתחזות לדפדפן"""
     
-    # הקישור המעודכן שלך (שים לב ל-formResponse בסוף במקום viewform)
+    # הכתובת הנקייה המסתיימת ב-formResponse
     url = "https://docs.google.com/forms/d/e/1FAIpQLSenYAwJHVW5jV-hU6hKF5b16LU6ku-v6Pqz6vCq2LFjSe40qA/formResponse"
     
-    # השדות המדויקים שחילצנו מהקישור שלך
+    # הנתונים לשליחה המבוססים על ה-entry שחילצת
     form_data = {
-        "entry.475870562": str(ms_id),          # מספר כתב יד
-        "entry.148108717": str(pages_range),    # טווח עמודים
-        "entry.1430710188": f"{processing_time} שניות" # זמן עיבוד
+        "entry.475870562": str(ms_id),          
+        "entry.148108717": str(pages_range),    
+        "entry.1430710188": f"{processing_time} שניות" 
+    }
+    
+    # התחזות לדפדפן
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
     }
     
     try:
-        # שליחת הנתונים לטופס ברקע
-        requests.post(url, data=form_data)
+        response = requests.post(url, data=form_data, headers=headers)
+        if response.status_code == 200:
+            st.toast("✅ נתוני ההורדה נרשמו בהצלחה")
+        else:
+            st.error(f"⚠️ שגיאה ברישום הנתונים: {response.status_code}")
     except Exception as e:
-        # מתעלמים משגיאות חיבור כדי לא להרוס למשתמש את חוויית ההורדה
-        pass
+        st.error(f"⚠️ שגיאת תקשורת ברישום: {e}")
 
 # --- ממשק המשתמש ---
 
 st.title("📚 הורדת כתבי יד - ספריית חב\"ד")
 
-# קלט מספר כתב יד עם Placeholder והסבר
 ms_id_input = st.text_input(
     "הכנס מספר כתב יד:", 
     placeholder="למשל: 1102",
     help="הקש Enter לאחר הזנת המספר כדי לראות את פרטי הספר"
 )
 
-# הצגת פרטים מהקטלוג ועצירה אם ריק
 if ms_id_input and df_catalog is not None:
     ms_id_clean = ms_id_input.strip()
     row = df_catalog[df_catalog['ms_id'] == ms_id_clean]
@@ -189,22 +187,10 @@ if ms_id_input and df_catalog is not None:
         ms_desc = row['desc'].values[0]
         ms_shelf = row['shelf'].values[0]
         ms_pages = row['pages'].values[0]
-        
-        # הצגת פרטי הספר בתיבה כחולה
         st.info(f"📍 **מדור ומדף:** {ms_shelf}  \n📄 **תיאור:** {ms_desc}  \n🔢 **מספר דפים:** {ms_pages}")
-        
-        # בדיקה אם כתב היד ריק
-        try:
-            total_p = int(float(ms_pages))
-            if total_p == 0:
-                st.error("⚠️ כתב יד זה מוגדר כריק במערכת (0 דפים). לא ניתן להוריד.")
-                st.stop()
-        except:
-            pass
     else:
-        st.warning("מספר כתב היד לא נמצא בקטלוג המקומי, אך ניתן לנסות להוריד ישירות מהשרת.")
+        st.warning("מספר כתב היד לא נמצא בקטלוג המקומי.")
 
-# בחירת טווח
 specific_range = st.checkbox("אני רוצה להוריד רק טווח עמודים ספציפי")
 start_page, end_page = 1, 10
 if specific_range:
@@ -219,7 +205,7 @@ if st.button("הורד", type="primary"):
         ms_id = ms_id_input.strip()
         start_time = time.time()
         
-        with st.spinner('בונה את דף השער ואוסף נתונים...'):
+        with st.spinner('מעבד את הבקשה...'):
             meta = get_manuscript_metadata(ms_id)
             range_txt = f"עמודים {start_page} עד {end_page}" if specific_range else ""
             cover_file = f"cover_{ms_id}.pdf"
@@ -229,17 +215,16 @@ if st.button("הורד", type="primary"):
             chunk_files = [cover_file]
             
             curr = start_page if specific_range else 1
-            last = end_page if specific_range else 2000 # מגבלה גסה לספר שלם
+            last = end_page if specific_range else 2000 
             keep_going = True
             
         status = st.empty()
         progress = st.progress(0)
         
-        # לולאת הורדה (הנוסחה הישנה עם קבצים על הדיסק)
         while keep_going and curr <= last:
             batch_size = 20
             limit = min(curr + batch_size - 1, last)
-            status.info(f"מעבד עמודים {curr} עד {limit}...")
+            status.info(f"מוריד עמודים {curr} עד {limit}...")
             
             results = []
             with concurrent.futures.ThreadPoolExecutor(max_workers=batch_size) as executor:
@@ -253,7 +238,7 @@ if st.button("הורד", type="primary"):
             
             for p_num, content, code in results:
                 if content is None:
-                    if code == 404: status.success("הגענו לסוף הדפים הזמינים.")
+                    if code == 404: status.success("הגענו לסוף הדפים.")
                     keep_going = False
                     break
                 
@@ -276,7 +261,6 @@ if st.button("הורד", type="primary"):
             progress.progress(min(curr / 500, 1.0))
             time.sleep(0.5)
 
-        # איחוד סופי
         final_file = f"Manuscript_{ms_id}.pdf"
         final_merger = PdfWriter()
         for f in chunk_files:
@@ -290,9 +274,9 @@ if st.button("הורד", type="primary"):
         duration = round(time.time() - start_time, 1)
         status.empty()
         progress.empty()
-        st.success(f"✅ הספר מוכן! (זמן עיבוד: {duration} שניות)")
+        st.success(f"✅ הספר מוכן! ({duration} שניות)")
         
-        # --- קריאה לפונקציית הטופס בסיום המוצלח ---
+        # קריאה לפונקציית הרישום
         pages_downloaded = f"{start_page}-{end_page}" if specific_range else "הכל"
         log_to_google_form(ms_id, pages_downloaded, duration)
         
@@ -300,10 +284,9 @@ if st.button("הורד", type="primary"):
         col1, col2 = st.columns(2)
         with col1:
             with open(final_file, "rb") as f:
-                st.download_button("📥 הורד קובץ למחשב", f, file_name=final_file, use_container_width=True)
+                st.download_button("📥 הורד קובץ", f, file_name=final_file, use_container_width=True)
         with col2:
             open_pdf_in_new_tab(final_file, ms_id)
             
-        # ניקוי סופי
         if os.path.exists(final_file): os.remove(final_file)
         gc.collect()
