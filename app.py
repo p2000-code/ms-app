@@ -140,34 +140,29 @@ def open_pdf_in_new_tab(file_path, ms_id):
     """
     components.html(html_code, height=60)
 
-# --- פונקציית הרישום המעודכנת לטופס גוגל ---
-
+# --- פונקציית הרישום השקטה לטופס גוגל ---
 def log_to_google_form(ms_id, pages_range, processing_time):
-    """שליחה לטופס גוגל עם כתב נקייה והתחזות לדפדפן"""
+    """שליחה לטופס גוגל מאחורי הקלעים בשקט מוחלט"""
     
-    # הכתובת הנקייה המסתיימת ב-formResponse
     url = "https://docs.google.com/forms/d/e/1FAIpQLSenYAwJHVW5jV-hU6hKF5b16LU6ku-v6Pqz6vCq2LFjSe40qA/formResponse"
     
-    # הנתונים לשליחה המבוססים על ה-entry שחילצת
     form_data = {
         "entry.475870562": str(ms_id),          
         "entry.148108717": str(pages_range),    
         "entry.1430710188": f"{processing_time} שניות" 
     }
     
-    # התחזות לדפדפן
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
     }
     
     try:
-        response = requests.post(url, data=form_data, headers=headers)
-        if response.status_code == 200:
-            st.toast("✅ נתוני ההורדה נרשמו בהצלחה")
-        else:
-            st.error(f"⚠️ שגיאה ברישום הנתונים: {response.status_code}")
-    except Exception as e:
-        st.error(f"⚠️ שגיאת תקשורת ברישום: {e}")
+        # בקשת השליחה נשלחת ברקע
+        requests.post(url, data=form_data, headers=headers)
+        # הסרנו את כל הודעות ה-toast וה-error, ככה שלא יקפוץ כלום למשתמש
+    except:
+        # גם אם יש שגיאת אינטרנט, מתעלמים בשקט מוחלט
+        pass
 
 # --- ממשק המשתמש ---
 
