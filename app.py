@@ -148,6 +148,27 @@ def open_pdf_in_new_tab(file_path, ms_id):
     """
     components.html(html_code, height=60)
 
+# --- פונקציית הקסם: שליחה חשאית לטופס גוגל ---
+def log_to_google_form(ms_id, pages_range, processing_time):
+    """שולח את הנתונים ל-Google Sheets דרך טופס פשוט ללא צורך בהרשאות"""
+    
+    # הקישור המעודכן שלך (שים לב ל-formResponse בסוף במקום viewform)
+    url = "https://docs.google.com/forms/d/e/1FAIpQLSenYAwJHVW5jV-hU6hKF5b16LU6ku-v6Pqz6vCq2LFjSe40qA/formResponse"
+    
+    # השדות המדויקים שחילצנו מהקישור שלך
+    form_data = {
+        "entry.475870562": str(ms_id),          # מספר כתב יד
+        "entry.148108717": str(pages_range),    # טווח עמודים
+        "entry.1430710188": f"{processing_time} שניות" # זמן עיבוד
+    }
+    
+    try:
+        # שליחת הנתונים לטופס ברקע
+        requests.post(url, data=form_data)
+    except Exception as e:
+        # מתעלמים משגיאות חיבור כדי לא להרוס למשתמש את חוויית ההורדה
+        pass
+
 # --- ממשק המשתמש ---
 
 st.title("📚 הורדת כתבי יד - ספריית חב\"ד")
@@ -270,6 +291,10 @@ if st.button("הורד", type="primary"):
         status.empty()
         progress.empty()
         st.success(f"✅ הספר מוכן! (זמן עיבוד: {duration} שניות)")
+        
+        # --- קריאה לפונקציית הטופס בסיום המוצלח ---
+        pages_downloaded = f"{start_page}-{end_page}" if specific_range else "הכל"
+        log_to_google_form(ms_id, pages_downloaded, duration)
         
         st.divider()
         col1, col2 = st.columns(2)
