@@ -167,8 +167,19 @@ def open_pdf_in_new_tab(file_path, ms_id):
 
 df_catalog = load_catalog()
 
+# איתחול Session State
 if 'selected_ms_id' not in st.session_state: st.session_state['selected_ms_id'] = ""
 if 'page_number' not in st.session_state: st.session_state['page_number'] = 0
+if 'needs_scroll' not in st.session_state: st.session_state['needs_scroll'] = False
+
+# פונקציה לקפיצה לראש העמוד
+def scroll_to_top():
+    components.html("<script>window.parent.scrollTo(0,0);</script>", height=0)
+
+# אם עברנו עמוד, נבצע את הקפיצה לראש הדף
+if st.session_state['needs_scroll']:
+    scroll_to_top()
+    st.session_state['needs_scroll'] = False
 
 # 1. Sidebar - סינון מדור
 selected_shelf = "הכל"
@@ -179,7 +190,7 @@ if df_catalog is not None:
     clean_shelves = [s for s in all_shelves if s not in to_remove]
     selected_shelf = st.sidebar.selectbox("בחר או הקלד שם מדור:", ["הכל"] + sorted(clean_shelves))
 
-# 2. חיפוש טקסטואלי חכם
+# 2. חיפוש טקסטואלי חכם ודפדוף
 st.markdown('<p style="text-align: right; font-weight: bold;">חיפוש בקטלוג (לחיפוש כמה אפשרויות, הפרד ביניהן בפסיק):</p>', unsafe_allow_html=True)
 search_term = st.text_input("חיפוש", placeholder="למשל: אדמו''ר הזקן, פאריטש", label_visibility="collapsed")
 
@@ -197,12 +208,19 @@ if df_catalog is not None and (search_term or selected_shelf != "הכל"):
     if total_results > 0:
         results_per_page = 20
         total_pages = (total_results // results_per_page) + (1 if total_results % results_per_page > 0 else 0)
-        if st.session_state['page_number'] >= total_pages: st.session_state['page_number'] = 0
+        
+        # איפוס עמוד אם החיפוש השתנה
+        if 'last_search' not in st.session_state or st.session_state['last_search'] != search_term:
+            st.session_state['page_number'] = 0
+            st.session_state['last_search'] = search_term
 
         st.markdown(f'<p style="text-align: right; font-size: 13px; color: #666;">נמצאו {total_results} תוצאות (עמוד {st.session_state["page_number"] + 1} מתוך {total_pages}):</p>', unsafe_allow_html=True)
         
         start_idx = st.session_state['page_number'] * results_per_page
         current_page_df = f_df.iloc[start_idx : start_idx + results_per_page]
+        
+        # עוגן לתחילת הרשימה
+        st.markdown("<div id='results_top'></div>", unsafe_allow_html=True)
         
         for i, row in current_page_df.iterrows():
             desc_h = highlight_term(row['desc'], search_term)
@@ -217,11 +235,13 @@ if df_catalog is not None and (search_term or selected_shelf != "הכל"):
                 st.session_state['selected_ms_id'] = row['ms_id']
                 st.rerun()
 
+        # כפתורי ניווט
         col_prev, col_page, col_next = st.columns([1, 2, 1])
         with col_next:
             if st.session_state['page_number'] > 0:
                 if st.button("<< הקודם"):
                     st.session_state['page_number'] -= 1
+                    st.session_state['needs_scroll'] = True
                     st.rerun()
         with col_page:
             st.markdown(f"<p style='text-align:center;'>עמוד {st.session_state['page_number'] + 1}</p>", unsafe_allow_html=True)
@@ -229,6 +249,7 @@ if df_catalog is not None and (search_term or selected_shelf != "הכל"):
             if st.session_state['page_number'] < total_pages - 1:
                 if st.button("הבא >>"):
                     st.session_state['page_number'] += 1
+                    st.session_state['needs_scroll'] = True
                     st.rerun()
     elif search_term:
         st.warning("לא נמצאו תוצאות.")
@@ -243,7 +264,6 @@ if ms_id_final and df_catalog is not None:
     ms_clean = ms_id_final.strip()
     row = df_catalog[df_catalog['ms_id'] == ms_clean]
     if not row.empty:
-        # תיקון: הצגת התיאור המלא ללא חיתוך
         st.markdown(f"""
         <div class="details-box">
             <div style="font-weight: bold; color: #1e3d59; font-size: 18px; border-bottom: 1px solid #dcd6c3; padding-bottom: 5px; margin-bottom: 10px;">
@@ -277,9 +297,7 @@ if ms_id_final and df_catalog is not None:
             curr, last = (start_p, end_p) if specific_range else (1, 2000)
             
             status = st.empty()
-            
-            keep_going = True
-            while keep_going and curr <= last:
+            while curr <= last:
                 batch = 20
                 limit = min(curr + batch - 1, last)
                 status.info(f"מוריד דפים {curr} עד {limit}...")
@@ -294,7 +312,7 @@ if ms_id_final and df_catalog is not None:
                 temps = []
                 for p_n, content, code in res:
                     if content is None:
-                        keep_going = False
+                        curr = last + 1 # הפסקת הלולאה
                         break
                     t_name = f"t_{ms_id}_{p_n}.pdf"
                     with open(t_name, 'wb') as f: f.write(content)
