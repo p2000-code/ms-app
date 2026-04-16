@@ -16,7 +16,7 @@ from datetime import datetime
 # 1. הגדרות תצוגה
 st.set_page_config(page_title="הורדת כתבי יד - ספריית חבדי", layout="centered")
 
-# 2. עיצוב ממשק נקי ומעודן
+# 2. עיצוב ממשק יציב ונקי
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;700&display=swap');
@@ -30,34 +30,42 @@ st.markdown("""
         /* כותרת מעודנת */
         .subtle-header {
             text-align: center;
-            padding-bottom: 20px;
+            padding-bottom: 10px;
             border-bottom: 1px solid #dcd6c3;
-            margin-bottom: 30px;
+            margin-bottom: 35px;
             color: #1e3d59;
         }
 
-        /* הנחיית משתמש מעל שדה הקלט */
+        /* הנחיית משתמש ברורה מעל השדה */
         .input-instruction {
-            font-size: 14px;
-            color: #666;
-            margin-bottom: -15px;
+            font-size: 15px;
+            color: #444;
+            margin-bottom: 8px;
+            text-align: right;
+            font-weight: bold;
         }
 
-        /* יישור טקסט כללי */
-        .stMarkdown, .stText, .stInfo, .stError, .stWarning {
+        /* יישור אלמנטים לימין */
+        .stMarkdown, .stText, .stInfo, .stError, .stWarning, .stCheckbox {
             direction: rtl;
             text-align: right;
         }
 
-        /* עיצוב כפתור הורדה סולידי */
+        /* סידור כפתור הורדה */
         div.stButton > button:first-child {
             background-color: #1e3d59;
             color: #ffffff !important;
             width: 100%;
             border-radius: 4px;
-            height: 3em;
+            height: 3.5em;
             font-weight: bold;
             border: none;
+            margin-top: 15px;
+        }
+
+        /* תיקון לריווח של שדות הקלט */
+        .stTextInput {
+            margin-bottom: 20px;
         }
     </style>
     
@@ -185,12 +193,15 @@ def log_to_google_form(ms_id, pages_range, processing_time):
 
 # --- ממשק המשתמש ---
 
-st.markdown('<p class="input-instruction">להצגת פרטי כתב היד, יש להקיש אנטר (Enter) לאחר הזנת המספר</p>', unsafe_allow_html=True)
-ms_id_input = st.text_input(
-    "הזן מספר כתב יד:", 
-    placeholder="למשל: 1102",
-    label_visibility="collapsed"
-)
+# מיכל (Container) לארגון שדה הקלט
+input_col = st.container()
+with input_col:
+    st.markdown('<p class="input-instruction">להצגת פרטי כתב היד, יש להקיש אנטר (Enter) לאחר הזנת המספר:</p>', unsafe_allow_html=True)
+    ms_id_input = st.text_input(
+        "מספר כתב יד", 
+        placeholder="למשל: 1102",
+        label_visibility="collapsed"
+    )
 
 if ms_id_input and df_catalog is not None:
     ms_id_clean = ms_id_input.strip()
