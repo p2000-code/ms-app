@@ -26,7 +26,6 @@ st.markdown("""
             direction: rtl;
         }
 
-        /* כותרת מעודנת */
         .subtle-header {
             text-align: center;
             padding-bottom: 10px;
@@ -35,13 +34,11 @@ st.markdown("""
             color: #1e3d59;
         }
 
-        /* יישור אלמנטים לימין */
         .stMarkdown, .stText, .stInfo, .stError, .stWarning, .stCheckbox, .stSidebar {
             direction: rtl;
             text-align: right;
         }
 
-        /* סידור כפתור הורדה */
         div.stButton > button:first-child {
             background-color: #1e3d59;
             color: #ffffff !important;
@@ -53,7 +50,6 @@ st.markdown("""
             margin-top: 15px;
         }
         
-        /* עיצוב ה-Sidebar */
         section[data-testid="stSidebar"] {
             background-color: #f5eee0;
             border-left: 1px solid #dcd6c3;
@@ -75,13 +71,15 @@ def load_catalog():
     file_name = 'catalog.csv'
     if os.path.exists(file_name):
         try:
-            # קריאת הקטלוג לפי המבנה שזיהינו
             df = pd.read_csv(file_name, header=None, skiprows=1, encoding='utf-8')
-            # מתן שמות לעמודות הרלוונטיות
             df = df[[0, 1, 2, 17]]
             df.columns = ['ms_id', 'shelf', 'desc', 'pages']
             df['ms_id'] = df['ms_id'].astype(str).str.strip()
+            
+            # ניקוי ומיזוג מדורים
             df['shelf'] = df['shelf'].fillna("ללא מדור").astype(str).str.strip()
+            df['shelf'] = df['shelf'].replace('[לד', 'לד') # מיזוג [לד לתוך לד
+            
             df['desc'] = df['desc'].fillna("").astype(str)
             return df
         except Exception as e:
@@ -176,12 +174,25 @@ def open_pdf_in_new_tab(file_path, ms_id):
 
 # --- ממשק המשתמש ---
 
-# 1. סינון לפי מדור ב-Sidebar (אופציונלי)
+# 1. סינון לפי מדור ב-Sidebar
 selected_shelf = "הכל"
 if df_catalog is not None:
     st.sidebar.header("סינון אופציונלי")
-    shelves = ["הכל"] + sorted(df_catalog['shelf'].unique().tolist())
-    selected_shelf = st.sidebar.selectbox("בחר מדור:", shelves)
+    
+    # רשימת הערכים להסרה מהרשימה
+    to_remove = ['*', '#', '2', '3', 'לא', '8', "אבולעפיא, חי רפאל ידידי'"]
+    
+    # יצירת רשימת מדורים נקייה
+    all_shelves = df_catalog['shelf'].unique().tolist()
+    clean_shelves = [s for s in all_shelves if s not in to_remove]
+    
+    shelves_options = ["הכל"] + sorted(clean_shelves)
+    
+    selected_shelf = st.sidebar.selectbox(
+        "בחר או הקלד שם מדור:", 
+        shelves_options,
+        help="ניתן לבחור מהרשימה או להקליד שם מדור לחיפוש מהיר"
+    )
 
 # 2. חיפוש חכם בתוך הקטלוג
 st.markdown('<p style="text-align: right; font-weight: bold;">חיפוש מהיר בקטלוג (לפי שם או תוכן):</p>', unsafe_allow_html=True)
@@ -190,7 +201,6 @@ search_term = st.text_input("הזן מילת חיפוש:", placeholder="למשל
 selected_ms_id_from_search = ""
 
 if df_catalog is not None:
-    # לוגיקת סינון משולבת
     filtered_df = df_catalog.copy()
     if selected_shelf != "הכל":
         filtered_df = filtered_df[filtered_df['shelf'] == selected_shelf]
@@ -198,7 +208,6 @@ if df_catalog is not None:
     if search_term:
         filtered_df = filtered_df[filtered_df['desc'].str.contains(search_term, na=False, case=False)]
     
-    # הצגת תוצאות אם המשתמש התחיל לחפש או סינן
     if (search_term or selected_shelf != "הכל") and not filtered_df.empty:
         options = filtered_df.apply(lambda x: f"{x['ms_id']} | {str(x['desc'])[:65]}...", axis=1).tolist()
         st.markdown(f'<p style="text-align: right; font-size: 13px; color: #666;">נמצאו {len(filtered_df)} תוצאות:</p>', unsafe_allow_html=True)
@@ -211,7 +220,7 @@ if df_catalog is not None:
 
 st.divider()
 
-# 3. שדה ה-ID הסופי (מתמלא אוטומטית מהחיפוש)
+# 3. שדה ה-ID הסופי
 st.markdown('<p style="text-align: right; font-size: 14px; color: #444;">להצגת פרטי כתב היד, יש להקיש אנטר (Enter) לאחר הזנת המספר:</p>', unsafe_allow_html=True)
 ms_id_input = st.text_input(
     "מספר כתב יד להורדה", 
@@ -220,7 +229,6 @@ ms_id_input = st.text_input(
     label_visibility="collapsed"
 )
 
-# הצגת פרטי כתב היד שנבחר/הוזן
 if ms_id_input and df_catalog is not None:
     ms_id_clean = ms_id_input.strip()
     row = df_catalog[df_catalog['ms_id'] == ms_id_clean]
@@ -233,7 +241,6 @@ if ms_id_input and df_catalog is not None:
     else:
         st.warning("מספר כתב היד לא נמצא בקטלוג המקומי.")
 
-# 4. הגדרות הורדה
 specific_range = st.checkbox("הורדת טווח עמודים ספציפי")
 start_page, end_page = 1, 10
 if specific_range:
@@ -241,7 +248,6 @@ if specific_range:
     with c1: start_page = st.number_input("מעמוד", min_value=1, value=1)
     with c2: end_page = st.number_input("עד עמוד", min_value=1, value=10)
 
-# 5. ביצוע ההורדה
 if st.button("הורד"):
     if not ms_id_input:
         st.warning("אנא הכנס מספר כתב יד.")
