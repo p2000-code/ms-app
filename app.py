@@ -11,12 +11,11 @@ import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
 from pypdf import PdfWriter
 from weasyprint import HTML
-from datetime import datetime
 
 # 1. הגדרות תצוגה
 st.set_page_config(page_title="הורדת כתבי יד - ספריית חבדי", layout="centered")
 
-# 2. עיצוב ממשק יציב ונקי
+# 2. עיצוב ממשק יציב ונקי (CSS)
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;700&display=swap');
@@ -36,17 +35,8 @@ st.markdown("""
             color: #1e3d59;
         }
 
-        /* הנחיית משתמש ברורה מעל השדה */
-        .input-instruction {
-            font-size: 15px;
-            color: #444;
-            margin-bottom: 8px;
-            text-align: right;
-            font-weight: bold;
-        }
-
         /* יישור אלמנטים לימין */
-        .stMarkdown, .stText, .stInfo, .stError, .stWarning, .stCheckbox {
+        .stMarkdown, .stText, .stInfo, .stError, .stWarning, .stCheckbox, .stSidebar {
             direction: rtl;
             text-align: right;
         }
@@ -62,10 +52,11 @@ st.markdown("""
             border: none;
             margin-top: 15px;
         }
-
-        /* תיקון לריווח של שדות הקלט */
-        .stTextInput {
-            margin-bottom: 20px;
+        
+        /* עיצוב ה-Sidebar */
+        section[data-testid="stSidebar"] {
+            background-color: #f5eee0;
+            border-left: 1px solid #dcd6c3;
         }
     </style>
     
@@ -77,16 +68,21 @@ st.markdown("""
 logging.getLogger('fontTools').setLevel(logging.WARNING)
 logging.getLogger('weasyprint').setLevel(logging.WARNING)
 
-# --- פונקציות עזר ---
+# --- פונקציות עזר ללוגיקה ---
 
 @st.cache_data
 def load_catalog():
     file_name = 'catalog.csv'
     if os.path.exists(file_name):
         try:
-            df = pd.read_csv(file_name, usecols=[0, 1, 2, 17], header=None, skiprows=1, encoding='utf-8')
+            # קריאת הקטלוג לפי המבנה שזיהינו
+            df = pd.read_csv(file_name, header=None, skiprows=1, encoding='utf-8')
+            # מתן שמות לעמודות הרלוונטיות
+            df = df[[0, 1, 2, 17]]
             df.columns = ['ms_id', 'shelf', 'desc', 'pages']
             df['ms_id'] = df['ms_id'].astype(str).str.strip()
+            df['shelf'] = df['shelf'].fillna("ללא מדור").astype(str).str.strip()
+            df['desc'] = df['desc'].fillna("").astype(str)
             return df
         except Exception as e:
             st.error(f"שגיאה בקריאת קובץ הקטלוג: {e}")
@@ -178,31 +174,53 @@ def open_pdf_in_new_tab(file_path, ms_id):
     """
     components.html(html_code, height=60)
 
-def log_to_google_form(ms_id, pages_range, processing_time):
-    url = "https://docs.google.com/forms/d/e/1FAIpQLSenYAwJHVW5jV-hU6hKF5b16LU6ku-v6Pqz6vCq2LFjSe40qA/formResponse"
-    form_data = {
-        "entry.475870562": str(ms_id),          
-        "entry.148108717": str(pages_range),    
-        "entry.1430710188": f"{processing_time} שניות" 
-    }
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    try:
-        requests.post(url, data=form_data, headers=headers, timeout=5)
-    except:
-        pass
-
 # --- ממשק המשתמש ---
 
-# מיכל (Container) לארגון שדה הקלט
-input_col = st.container()
-with input_col:
-    st.markdown('<p class="input-instruction">להצגת פרטי כתב היד, יש להקיש אנטר (Enter) לאחר הזנת המספר:</p>', unsafe_allow_html=True)
-    ms_id_input = st.text_input(
-        "מספר כתב יד", 
-        placeholder="למשל: 1102",
-        label_visibility="collapsed"
-    )
+# 1. סינון לפי מדור ב-Sidebar (אופציונלי)
+selected_shelf = "הכל"
+if df_catalog is not None:
+    st.sidebar.header("סינון אופציונלי")
+    shelves = ["הכל"] + sorted(df_catalog['shelf'].unique().tolist())
+    selected_shelf = st.sidebar.selectbox("בחר מדור:", shelves)
 
+# 2. חיפוש חכם בתוך הקטלוג
+st.markdown('<p style="text-align: right; font-weight: bold;">חיפוש מהיר בקטלוג (לפי שם או תוכן):</p>', unsafe_allow_html=True)
+search_term = st.text_input("הזן מילת חיפוש:", placeholder="למשל: תניא, אגרות קודש, אדמו''ר הזקן...", label_visibility="collapsed")
+
+selected_ms_id_from_search = ""
+
+if df_catalog is not None:
+    # לוגיקת סינון משולבת
+    filtered_df = df_catalog.copy()
+    if selected_shelf != "הכל":
+        filtered_df = filtered_df[filtered_df['shelf'] == selected_shelf]
+    
+    if search_term:
+        filtered_df = filtered_df[filtered_df['desc'].str.contains(search_term, na=False, case=False)]
+    
+    # הצגת תוצאות אם המשתמש התחיל לחפש או סינן
+    if (search_term or selected_shelf != "הכל") and not filtered_df.empty:
+        options = filtered_df.apply(lambda x: f"{x['ms_id']} | {str(x['desc'])[:65]}...", axis=1).tolist()
+        st.markdown(f'<p style="text-align: right; font-size: 13px; color: #666;">נמצאו {len(filtered_df)} תוצאות:</p>', unsafe_allow_html=True)
+        choice = st.selectbox("בחר את כתב היד מהרשימה:", ["--- בחר מהתוצאות ---"] + options[:50], label_visibility="collapsed")
+        
+        if choice != "--- בחר מהתוצאות ---":
+            selected_ms_id_from_search = choice.split(" | ")[0]
+    elif (search_term or selected_shelf != "הכל"):
+        st.warning("לא נמצאו תוצאות מתאימות.")
+
+st.divider()
+
+# 3. שדה ה-ID הסופי (מתמלא אוטומטית מהחיפוש)
+st.markdown('<p style="text-align: right; font-size: 14px; color: #444;">להצגת פרטי כתב היד, יש להקיש אנטר (Enter) לאחר הזנת המספר:</p>', unsafe_allow_html=True)
+ms_id_input = st.text_input(
+    "מספר כתב יד להורדה", 
+    value=selected_ms_id_from_search,
+    placeholder="למשל: 1102",
+    label_visibility="collapsed"
+)
+
+# הצגת פרטי כתב היד שנבחר/הוזן
 if ms_id_input and df_catalog is not None:
     ms_id_clean = ms_id_input.strip()
     row = df_catalog[df_catalog['ms_id'] == ms_id_clean]
@@ -215,6 +233,7 @@ if ms_id_input and df_catalog is not None:
     else:
         st.warning("מספר כתב היד לא נמצא בקטלוג המקומי.")
 
+# 4. הגדרות הורדה
 specific_range = st.checkbox("הורדת טווח עמודים ספציפי")
 start_page, end_page = 1, 10
 if specific_range:
@@ -222,6 +241,7 @@ if specific_range:
     with c1: start_page = st.number_input("מעמוד", min_value=1, value=1)
     with c2: end_page = st.number_input("עד עמוד", min_value=1, value=10)
 
+# 5. ביצוע ההורדה
 if st.button("הורד"):
     if not ms_id_input:
         st.warning("אנא הכנס מספר כתב יד.")
@@ -298,9 +318,6 @@ if st.button("הורד"):
             status.empty()
             progress.empty()
             st.success(f"הקובץ מוכן ({duration} שניות)")
-            
-            pages_downloaded = f"{start_page}-{end_page}" if specific_range else "הכל"
-            log_to_google_form(ms_id, pages_downloaded, duration)
             
             st.divider()
             col1, col2 = st.columns(2)
