@@ -36,6 +36,13 @@ st.markdown("""
             color: #1e3d59;
         }
 
+        /* הנחיית משתמש מעל שדה הקלט */
+        .input-instruction {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: -15px;
+        }
+
         /* יישור טקסט כללי */
         .stMarkdown, .stText, .stInfo, .stError, .stWarning {
             direction: rtl;
@@ -103,7 +110,6 @@ def get_manuscript_metadata(ms_id):
         return {"מספר כתב יד": str(ms_id), "מדור ומדף": "לא נמצא", "תיאור": ["לא ניתן היה לשלוף תיאור מלא"]}
 
 def create_cover_page_html(metadata, output_filename, range_text=""):
-    # שחזור עימוד דף השער המקורי
     desc_html = "".join([f"<p>{line}</p>" for line in metadata['תיאור']])
     range_html = f"<h3>{range_text}</h3>" if range_text else ""
     
@@ -179,11 +185,11 @@ def log_to_google_form(ms_id, pages_range, processing_time):
 
 # --- ממשק המשתמש ---
 
-st.write("לחץ Enter לאחר הזנת המספר לטעינת נתונים")
+st.markdown('<p class="input-instruction">להצגת פרטי כתב היד, יש להקיש אנטר (Enter) לאחר הזנת המספר</p>', unsafe_allow_html=True)
 ms_id_input = st.text_input(
     "הזן מספר כתב יד:", 
     placeholder="למשל: 1102",
-    label_visibility="collapsed" # מסתיר את הלייבל הכפול
+    label_visibility="collapsed"
 )
 
 if ms_id_input and df_catalog is not None:
