@@ -14,94 +14,55 @@ from weasyprint import HTML
 from datetime import datetime
 
 # 1. הגדרות תצוגה
-st.set_page_config(page_title="הורדת ספרי חב\"ד - ממשק משופר", page_icon="📚", layout="centered")
+st.set_page_config(page_title="הורדת כתבי יד - ספריית חבדי", layout="centered")
 
-# 2. עיצוב ממשק מתקדם (CSS)
+# 2. עיצוב ממשק נקי ומעודן
 st.markdown("""
     <style>
-        /* ייבוא פונט תורני */
         @import url('https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;700&display=swap');
 
-        /* הגדרות כלליות - רקע קרם עדין */
         .stApp {
             background-color: #fdf6e3;
             font-family: 'Frank Ruhl Libre', serif;
             direction: rtl;
         }
 
-        /* כותרת האתר - כרטיס כחול מוזהב */
-        .main-header {
-            background-color: #1e3d59;
-            padding: 30px;
-            border-radius: 15px;
+        /* כותרת מעודנת */
+        .subtle-header {
             text-align: center;
-            color: #f5f0e1;
-            border-bottom: 5px solid #ffc107;
-            margin-bottom: 40px;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
-        }
-        .main-header h1 {
-            margin: 0;
-            font-size: 40px;
-            color: #ffc107;
-        }
-
-        /* עיצוב תיבת הקלט (Card) */
-        div[data-testid="stVerticalBlock"] > div:has(div.stTextInput) {
-            background-color: #ffffff;
-            padding: 25px;
-            border-radius: 15px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-            border: 1px solid #e0e0e0;
-        }
-
-        /* עיצוב כפתור ההורדה */
-        div.stButton > button:first-child {
-            background-color: #1e3d59;
-            color: #ffc107 !important;
-            width: 100%;
-            border-radius: 10px;
-            height: 3.5em;
-            font-size: 20px;
-            font-weight: bold;
-            border: 2px solid #ffc107;
-            transition: all 0.3s ease;
-            cursor: pointer;
-            margin-top: 10px;
-        }
-        div.stButton > button:first-child:hover {
-            background-color: #ffc107;
-            color: #1e3d59 !important;
-            box-shadow: 0 5px 15px rgba(255, 193, 7, 0.4);
-        }
-
-        /* הסתרת הוראות אנגלית ותרגום לעברית */
-        div[data-testid="InputInstructions"] > span:nth-child(1) { visibility: hidden; }
-        div[data-testid="InputInstructions"] > span:nth-child(1)::before {
-            content: "לחץ Enter לטעינת נתונים";
-            visibility: visible;
-            display: block;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #dcd6c3;
+            margin-bottom: 30px;
             color: #1e3d59;
-            font-size: 14px;
         }
 
-        /* יישור טקסט לימין */
+        /* יישור טקסט כללי */
         .stMarkdown, .stText, .stInfo, .stError, .stWarning {
             direction: rtl;
             text-align: right;
         }
+
+        /* עיצוב כפתור הורדה סולידי */
+        div.stButton > button:first-child {
+            background-color: #1e3d59;
+            color: #ffffff !important;
+            width: 100%;
+            border-radius: 4px;
+            height: 3em;
+            font-weight: bold;
+            border: none;
+        }
     </style>
     
-    <div class="main-header">
-        <h1>📚 ספריית כתבי יד - חב"ד</h1>
-        <p>ממשק להורדה ואיחוד דפי כתבי יד בקובץ PDF אחד</p>
+    <div class="subtle-header">
+        <h1>הורדת כתבי יד - ספריית חב"ד</h1>
     </div>
 """, unsafe_allow_html=True)
 
 logging.getLogger('fontTools').setLevel(logging.WARNING)
 logging.getLogger('weasyprint').setLevel(logging.WARNING)
 
-# --- פונקציות עזר ללוגיקה ---
+# --- פונקציות עזר ---
 
 @st.cache_data
 def load_catalog():
@@ -113,7 +74,7 @@ def load_catalog():
             df['ms_id'] = df['ms_id'].astype(str).str.strip()
             return df
         except Exception as e:
-            st.error(f"⚠️ שגיאה בקריאת קובץ הקטלוג: {e}")
+            st.error(f"שגיאה בקריאת קובץ הקטלוג: {e}")
             return None
     return None
 
@@ -142,8 +103,9 @@ def get_manuscript_metadata(ms_id):
         return {"מספר כתב יד": str(ms_id), "מדור ומדף": "לא נמצא", "תיאור": ["לא ניתן היה לשלוף תיאור מלא"]}
 
 def create_cover_page_html(metadata, output_filename, range_text=""):
+    # שחזור עימוד דף השער המקורי
     desc_html = "".join([f"<p>{line}</p>" for line in metadata['תיאור']])
-    range_html = f"<h3 style='color: #555;'>{range_text}</h3>" if range_text else ""
+    range_html = f"<h3>{range_text}</h3>" if range_text else ""
     
     html_content = f"""
     <!DOCTYPE html>
@@ -152,10 +114,12 @@ def create_cover_page_html(metadata, output_filename, range_text=""):
         <meta charset="utf-8">
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;700&display=swap');
-            body {{ font-family: 'Frank Ruhl Libre', serif; text-align: center; padding-top: 100px; color: #1e3d59; background: #fff; }}
-            h1 {{ font-size: 50px; margin-bottom: 20px; border-bottom: 2px solid #ffc107; display: inline-block; padding-bottom: 10px; }}
-            h2 {{ font-size: 30px; margin-bottom: 20px; font-weight: normal; color: #333; }}
-            .description {{ font-size: 22px; line-height: 1.6; max-width: 80%; margin: 40px auto; text-align: right; color: #000; border-right: 5px solid #ffc107; padding-right: 20px; }}
+            body {{ font-family: 'Frank Ruhl Libre', serif; text-align: center; padding-top: 100px; color: #000; }}
+            h1 {{ font-size: 50px; margin-bottom: 20px; }}
+            h2 {{ font-size: 30px; margin-bottom: 20px; font-weight: normal; }}
+            h3 {{ font-size: 24px; margin-bottom: 50px; font-weight: normal; }}
+            .description {{ font-size: 22px; line-height: 1.6; max-width: 80%; margin: 0 auto; }}
+            p {{ margin: 8px 0; }}
         </style>
     </head>
     <body>
@@ -194,8 +158,8 @@ def open_pdf_in_new_tab(file_path, ms_id):
         }} else {{
             alert('נא לאפשר חלונות קופצים בדפדפן.');
         }}
-    " style="cursor: pointer; padding: 10px 20px; color: #ffc107; background-color: #1e3d59; border: 2px solid #ffc107; border-radius: 8px; font-size: 16px; font-weight: bold; width: 100%; height: 45px;">
-        👁️ צפה בכתב היד בחלונית חדשה
+    " style="cursor: pointer; padding: 10px 20px; color: white; background-color: #2b2b36; border: 1px solid #4a4a5a; border-radius: 5px; font-size: 16px; font-weight: bold; width: 100%; height: 45px;">
+        צפה בכתב היד בחלונית חדשה
     </button>
     """
     components.html(html_code, height=60)
@@ -213,11 +177,13 @@ def log_to_google_form(ms_id, pages_range, processing_time):
     except:
         pass
 
-# --- ממשק המשתמש הראשי ---
+# --- ממשק המשתמש ---
 
+st.write("לחץ Enter לאחר הזנת המספר לטעינת נתונים")
 ms_id_input = st.text_input(
     "הזן מספר כתב יד:", 
     placeholder="למשל: 1102",
+    label_visibility="collapsed" # מסתיר את הלייבל הכפול
 )
 
 if ms_id_input and df_catalog is not None:
@@ -228,25 +194,25 @@ if ms_id_input and df_catalog is not None:
         ms_desc = row['desc'].values[0]
         ms_shelf = row['shelf'].values[0]
         ms_pages = row['pages'].values[0]
-        st.success(f"📍 **נמצא בקטלוג:** {ms_shelf} | 📄 **תיאור:** {ms_desc} | 🔢 **עמודים:** {ms_pages}")
+        st.info(f"מדור ומדף: {ms_shelf} | תיאור: {ms_desc} | דפים: {ms_pages}")
     else:
-        st.warning("מספר כתב היד לא נמצא בקטלוג המקומי, המערכת תנסה לשלוף נתונים מהאתר.")
+        st.warning("מספר כתב היד לא נמצא בקטלוג המקומי.")
 
-specific_range = st.checkbox("אני רוצה להוריד רק טווח עמודים ספציפי")
+specific_range = st.checkbox("הורדת טווח עמודים ספציפי")
 start_page, end_page = 1, 10
 if specific_range:
     c1, c2 = st.columns(2)
-    with c1: start_page = st.number_input("משיכה מעמוד", min_value=1, value=1)
+    with c1: start_page = st.number_input("מעמוד", min_value=1, value=1)
     with c2: end_page = st.number_input("עד עמוד", min_value=1, value=10)
 
-if st.button("הורד עכשיו"):
+if st.button("הורד"):
     if not ms_id_input:
-        st.error("נא להזין מספר כתב יד.")
+        st.warning("אנא הכנס מספר כתב יד.")
     else:
         ms_id = ms_id_input.strip()
         start_time = time.time()
         
-        with st.spinner('מכין את הקובץ עבורך...'):
+        with st.spinner('מעבד...'):
             meta = get_manuscript_metadata(ms_id)
             range_txt = f"עמודים {start_page} עד {end_page}" if specific_range else ""
             cover_file = f"cover_{ms_id}.pdf"
@@ -265,7 +231,7 @@ if st.button("הורד עכשיו"):
             while keep_going and curr <= last:
                 batch_size = 20
                 limit = min(curr + batch_size - 1, last)
-                status.info(f"מוריד ומאחד דפים {curr} עד {limit}...")
+                status.info(f"מעבד עמודים {curr} עד {limit}...")
                 
                 results = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=batch_size) as executor:
@@ -279,7 +245,7 @@ if st.button("הורד עכשיו"):
                 
                 for p_num, content, code in results:
                     if content is None:
-                        if code == 404: status.success("הגענו לסוף כתב היד.")
+                        if code == 404: status.success("הושלמו כל הדפים הקיימים.")
                         keep_going = False
                         break
                     
@@ -314,8 +280,7 @@ if st.button("הורד עכשיו"):
             duration = round(time.time() - start_time, 1)
             status.empty()
             progress.empty()
-            st.balloons()
-            st.success(f"✅ הספר מוכן להורדה! (זמן עיבוד: {duration} שניות)")
+            st.success(f"הקובץ מוכן ({duration} שניות)")
             
             pages_downloaded = f"{start_page}-{end_page}" if specific_range else "הכל"
             log_to_google_form(ms_id, pages_downloaded, duration)
@@ -324,7 +289,7 @@ if st.button("הורד עכשיו"):
             col1, col2 = st.columns(2)
             with col1:
                 with open(final_file, "rb") as f:
-                    st.download_button("📥 שמור במחשב", f, file_name=final_file, use_container_width=True)
+                    st.download_button("הורד קובץ", f, file_name=final_file, use_container_width=True)
             with col2:
                 open_pdf_in_new_tab(final_file, ms_id)
                 
