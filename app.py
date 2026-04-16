@@ -64,6 +64,17 @@ st.markdown("""
             margin-bottom: 10px; 
             box-shadow: 1px 1px 3px rgba(0,0,0,0.05);
         }
+
+        .details-box {
+            background-color: #ffffff;
+            padding: 20px;
+            border: 1px solid #dcd6c3;
+            border-radius: 8px;
+            margin-top: 10px;
+            margin-bottom: 20px;
+            line-height: 1.6;
+            color: #000;
+        }
     </style>
     
     <div class="subtle-header">
@@ -96,7 +107,6 @@ def load_catalog():
 def highlight_term(text, term):
     if not term:
         return text
-    # פיצול לפי פסיקים בלבד
     parts = [p.strip() for p in term.split(',') if p.strip()]
     if not parts:
         return text
@@ -171,14 +181,13 @@ if df_catalog is not None:
 
 # 2. חיפוש טקסטואלי חכם
 st.markdown('<p style="text-align: right; font-weight: bold;">חיפוש בקטלוג (לחיפוש כמה אפשרויות, הפרד ביניהן בפסיק):</p>', unsafe_allow_html=True)
-search_term = st.text_input("הזן מילת חיפוש:", placeholder="למשל: אדמו''ר הזקן, אדמור הזקן", label_visibility="collapsed")
+search_term = st.text_input("חיפוש", placeholder="למשל: אדמו''ר הזקן, פאריטש", label_visibility="collapsed")
 
 if df_catalog is not None and (search_term or selected_shelf != "הכל"):
     f_df = df_catalog.copy()
     if selected_shelf != "הכל": f_df = f_df[f_df['shelf'] == selected_shelf]
     
     if search_term:
-        # פיצול לפי פסיקים ויצירת Regex OR
         search_parts = [p.strip() for p in search_term.split(',') if p.strip()]
         if search_parts:
             search_pattern = "|".join([re.escape(part) for part in search_parts])
@@ -226,15 +235,28 @@ if df_catalog is not None and (search_term or selected_shelf != "הכל"):
 
 st.divider()
 
-# 3. הזנת ID סופית והורדה
-st.markdown('<p style="text-align: right; font-weight: bold; font-size: 15px;">מספר כתב יד להורדה:</p>', unsafe_allow_html=True)
+# 3. הזנת ID סופית והצגת פרטים מלאה
+st.markdown('<p style="text-align: right; font-weight: bold; font-size: 15px; margin-bottom: 5px;">להצגת פרטי כתב היד, יש להקיש אנטר (Enter) לאחר הזנת המספר:</p>', unsafe_allow_html=True)
 ms_id_final = st.text_input("ID", value=st.session_state['selected_ms_id'], label_visibility="collapsed")
 
 if ms_id_final and df_catalog is not None:
     ms_clean = ms_id_final.strip()
     row = df_catalog[df_catalog['ms_id'] == ms_clean]
     if not row.empty:
-        st.info(f"נבחר: {row['desc'].values[0][:250]}...")
+        # תיקון: הצגת התיאור המלא ללא חיתוך
+        st.markdown(f"""
+        <div class="details-box">
+            <div style="font-weight: bold; color: #1e3d59; font-size: 18px; border-bottom: 1px solid #dcd6c3; padding-bottom: 5px; margin-bottom: 10px;">
+                פרטי כתב יד {ms_clean}
+            </div>
+            <div style="font-size: 15px;">
+                <strong>מדור ומדף:</strong> {row['shelf'].values[0]}<br>
+                <strong>מספר עמודים:</strong> {row['pages'].values[0]}<br><br>
+                <strong>תיאור מלא:</strong><br>
+                {row['desc'].values[0]}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
     
     specific_range = st.checkbox("הורדת טווח עמודים ספציפי")
     start_p, end_p = 1, 10
@@ -244,7 +266,7 @@ if ms_id_final and df_catalog is not None:
         with c2: end_p = st.number_input("עד עמוד", min_value=1, value=10)
 
     if st.button("הורד עכשיו"):
-        with st.spinner('מעבד...'):
+        with st.spinner('מכין את ה-PDF...'):
             ms_id = ms_clean
             meta = get_manuscript_metadata(ms_id)
             cover = f"cover_{ms_id}.pdf"
@@ -254,7 +276,6 @@ if ms_id_final and df_catalog is not None:
             chunk_files = [cover]
             curr, last = (start_p, end_p) if specific_range else (1, 2000)
             
-            p_bar = st.progress(0)
             status = st.empty()
             
             keep_going = True
@@ -296,8 +317,7 @@ if ms_id_final and df_catalog is not None:
             for f in chunk_files: os.remove(f)
             
             status.empty()
-            p_bar.empty()
-            st.success("הקובץ מוכן להורדה")
+            st.success("הקובץ מוכן")
             col_a, col_b = st.columns(2)
             with col_a:
                 with open(final, "rb") as f: st.download_button("שמור במחשב", f, file_name=final, use_container_width=True)
