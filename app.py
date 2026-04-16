@@ -16,7 +16,7 @@ from weasyprint import HTML
 # 1. הגדרות תצוגה
 st.set_page_config(page_title="הורדת כתבי יד - ספריית חבדי", layout="centered")
 
-# 2. עיצוב ממשק (CSS)
+# 2. עיצוב ממשק (CSS) - סגנון פרגמנט תורני
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;700&display=swap');
@@ -56,7 +56,6 @@ st.markdown("""
             border-left: 1px solid #dcd6c3;
         }
         
-        /* עיצוב כרטיסיית תוצאה */
         .result-card {
             background-color: #fcfaf5; 
             padding: 15px; 
@@ -64,6 +63,14 @@ st.markdown("""
             border-right: 4px solid #1e3d59; 
             margin-bottom: 10px; 
             box-shadow: 1px 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .input-instruction {
+            font-size: 15px;
+            color: #444;
+            margin-bottom: 8px;
+            text-align: right;
+            font-weight: bold;
         }
     </style>
     
@@ -97,7 +104,6 @@ def load_catalog():
 def highlight_term(text, term):
     if not term:
         return text
-    # הדגשה בצבע זהב-חום
     highlighted = re.sub(f"({re.escape(term)})", r'<span style="color: #b8860b; font-weight: bold; border-bottom: 1px solid #b8860b;">\1</span>', text, flags=re.IGNORECASE)
     return highlighted
 
@@ -154,9 +160,9 @@ def open_pdf_in_new_tab(file_path, ms_id):
 
 df_catalog = load_catalog()
 
-# איתחול Session State למניעת שגיאות ID
-if 'selected_ms_id' not in st.session_state:
-    st.session_state['selected_ms_id'] = ""
+# איתחול Session State
+if 'selected_ms_id' not in st.session_state: st.session_state['selected_ms_id'] = ""
+if 'page_number' not in st.session_state: st.session_state['page_number'] = 0
 
 # 1. Sidebar - סינון מדור
 selected_shelf = "הכל"
@@ -167,7 +173,7 @@ if df_catalog is not None:
     clean_shelves = [s for s in all_shelves if s not in to_remove]
     selected_shelf = st.sidebar.selectbox("בחר או הקלד שם מדור:", ["הכל"] + sorted(clean_shelves))
 
-# 2. חיפוש טקסטואלי
+# 2. חיפוש טקסטואלי ודפדוף
 st.markdown('<p style="text-align: right; font-weight: bold;">חיפוש מהיר בקטלוג:</p>', unsafe_allow_html=True)
 search_term = st.text_input("הזן מילת חיפוש:", placeholder="למשל: פאריטש...", label_visibility="collapsed")
 
@@ -176,9 +182,19 @@ if df_catalog is not None and (search_term or selected_shelf != "הכל"):
     if selected_shelf != "הכל": f_df = f_df[f_df['shelf'] == selected_shelf]
     if search_term: f_df = f_df[f_df['desc'].str.contains(search_term, na=False, case=False)]
     
-    if not f_df.empty:
-        st.markdown(f'<p style="text-align: right; font-size: 13px; color: #666;">נמצאו {len(f_df)} תוצאות:</p>', unsafe_allow_html=True)
-        for i, row in f_df.head(8).iterrows():
+    total_results = len(f_df)
+    if total_results > 0:
+        results_per_page = 20
+        total_pages = (total_results // results_per_page) + (1 if total_results % results_per_page > 0 else 0)
+        
+        if st.session_state['page_number'] >= total_pages: st.session_state['page_number'] = 0
+
+        st.markdown(f'<p style="text-align: right; font-size: 13px; color: #666;">נמצאו {total_results} תוצאות (עמוד {st.session_state["page_number"] + 1} מתוך {total_pages}):</p>', unsafe_allow_html=True)
+        
+        start_idx = st.session_state['page_number'] * results_per_page
+        current_page_df = f_df.iloc[start_idx : start_idx + results_per_page]
+        
+        for i, row in current_page_df.iterrows():
             desc_h = highlight_term(row['desc'], search_term)
             st.markdown(f"""
             <div class="result-card">
@@ -190,19 +206,35 @@ if df_catalog is not None and (search_term or selected_shelf != "הכל"):
             if st.button(f"בחר {row['ms_id']}", key=f"btn_{row['ms_id']}"):
                 st.session_state['selected_ms_id'] = row['ms_id']
                 st.rerun()
+
+        # כפתורי ניווט
+        col_prev, col_page, col_next = st.columns([1, 2, 1])
+        with col_next:
+            if st.session_state['page_number'] > 0:
+                if st.button("<< הקודם"):
+                    st.session_state['page_number'] -= 1
+                    st.rerun()
+        with col_page:
+            st.markdown(f"<p style='text-align:center;'>עמוד {st.session_state['page_number'] + 1}</p>", unsafe_allow_html=True)
+        with col_prev:
+            if st.session_state['page_number'] < total_pages - 1:
+                if st.button("הבא >>"):
+                    st.session_state['page_number'] += 1
+                    st.rerun()
     elif search_term:
         st.warning("לא נמצאו תוצאות.")
 
 st.divider()
 
-# 3. הזנת ID סופית
-st.markdown('<p style="text-align: right; font-size: 14px;">מספר כתב יד להורדה:</p>', unsafe_allow_html=True)
+# 3. הזנת ID סופית והורדה
+st.markdown('<p class="input-instruction">להצגת פרטי כתב היד, יש להקיש אנטר (Enter) לאחר הזנת המספר:</p>', unsafe_allow_html=True)
 ms_id_final = st.text_input("ID", value=st.session_state['selected_ms_id'], label_visibility="collapsed")
 
 if ms_id_final and df_catalog is not None:
-    row = df_catalog[df_catalog['ms_id'] == ms_id_final.strip()]
+    ms_clean = ms_id_final.strip()
+    row = df_catalog[df_catalog['ms_id'] == ms_clean]
     if not row.empty:
-        st.info(f"נבחר: {row['desc'].values[0][:150]}...")
+        st.info(f"נבחר: {row['desc'].values[0][:200]}...")
     
     specific_range = st.checkbox("הורדת טווח עמודים ספציפי")
     start_p, end_p = 1, 10
@@ -212,8 +244,8 @@ if ms_id_final and df_catalog is not None:
         with c2: end_p = st.number_input("עד עמוד", min_value=1, value=10)
 
     if st.button("הורד עכשיו"):
-        with st.spinner('מעבד...'):
-            ms_id = ms_id_final.strip()
+        with st.spinner('מעבד את הבקשה...'):
+            ms_id = ms_clean
             meta = get_manuscript_metadata(ms_id)
             cover = f"cover_{ms_id}.pdf"
             create_cover_page_html(meta, cover, f"עמודים {start_p}-{end_p}" if specific_range else "")
@@ -229,7 +261,7 @@ if ms_id_final and df_catalog is not None:
             while keep_going and curr <= last:
                 batch = 20
                 limit = min(curr + batch - 1, last)
-                status.info(f"מוריד דפים {curr}-{limit}...")
+                status.info(f"מוריד דפים {curr} עד {limit}...")
                 
                 res = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=batch) as ex:
@@ -263,10 +295,12 @@ if ms_id_final and df_catalog is not None:
             final_merger.close()
             for f in chunk_files: os.remove(f)
             
-            st.success("הקובץ מוכן!")
+            status.empty()
+            p_bar.empty()
+            st.success("הקובץ מוכן להורדה")
             col_a, col_b = st.columns(2)
             with col_a:
-                with open(final, "rb") as f: st.download_button("שמור קובץ", f, file_name=final)
+                with open(final, "rb") as f: st.download_button("שמור במחשב", f, file_name=final, use_container_width=True)
             with col_b: open_pdf_in_new_tab(final, ms_id)
             os.remove(final)
             gc.collect()
