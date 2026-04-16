@@ -140,9 +140,9 @@ def open_pdf_in_new_tab(file_path, ms_id):
     """
     components.html(html_code, height=60)
 
-# --- פונקציית הרישום השקטה לטופס גוגל ---
+# --- פונקציית הרישום לטופס גוגל ---
 def log_to_google_form(ms_id, pages_range, processing_time):
-    """שליחה לטופס גוגל מאחורי הקלעים בשקט מוחלט"""
+    """שליחה לטופס גוגל"""
     
     url = "https://docs.google.com/forms/d/e/1FAIpQLSenYAwJHVW5jV-hU6hKF5b16LU6ku-v6Pqz6vCq2LFjSe40qA/formResponse"
     
