@@ -192,7 +192,7 @@ if df_catalog is not None:
 
 # 2. חיפוש טקסטואלי חכם ודפדוף
 st.markdown('<p style="text-align: right; font-weight: bold;">חיפוש בקטלוג (לחיפוש כמה אפשרויות, הפרד ביניהן בפסיק):</p>', unsafe_allow_html=True)
-search_term = st.text_input("חיפוש", placeholder="למשל: אדמו''ר הזקן, אדה"ז", label_visibility="collapsed")
+search_term = st.text_input("חיפוש", placeholder="למשל: אדמו''ר הזקן, תניא", label_visibility="collapsed")
 
 if df_catalog is not None and (search_term or selected_shelf != "הכל"):
     f_df = df_catalog.copy()
