@@ -169,7 +169,7 @@ def log_to_google_form(ms_id, pages_range, processing_time):
 st.title("📚 הורדת כתבי יד - ספריית חב\"ד")
 
 ms_id_input = st.text_input(
-    "הכנס מספר כתב יד:", 
+    "הזן מספר כתב יד:", 
     placeholder="למשל: 1102",
     help="הקש Enter לאחר הזנת המספר כדי לראות את פרטי הספר"
 )
