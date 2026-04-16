@@ -16,7 +16,7 @@ from weasyprint import HTML
 # 1. הגדרות תצוגה
 st.set_page_config(page_title="הורדת כתבי יד - ספריית חבדי", layout="centered")
 
-# 2. עיצוב ממשק (CSS) - סגנון פרגמנט תורני
+# 2. עיצוב ממשק (CSS)
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;700&display=swap');
@@ -64,14 +64,6 @@ st.markdown("""
             margin-bottom: 10px; 
             box-shadow: 1px 1px 3px rgba(0,0,0,0.05);
         }
-
-        .input-instruction {
-            font-size: 15px;
-            color: #444;
-            margin-bottom: 8px;
-            text-align: right;
-            font-weight: bold;
-        }
     </style>
     
     <div class="subtle-header">
@@ -104,7 +96,12 @@ def load_catalog():
 def highlight_term(text, term):
     if not term:
         return text
-    highlighted = re.sub(f"({re.escape(term)})", r'<span style="color: #b8860b; font-weight: bold; border-bottom: 1px solid #b8860b;">\1</span>', text, flags=re.IGNORECASE)
+    # פיצול לפי פסיקים בלבד
+    parts = [p.strip() for p in term.split(',') if p.strip()]
+    if not parts:
+        return text
+    pattern = f"({'|'.join(re.escape(p) for p in parts)})"
+    highlighted = re.sub(pattern, r'<span style="color: #b8860b; font-weight: bold; border-bottom: 1px solid #b8860b;">\1</span>', text, flags=re.IGNORECASE)
     return highlighted
 
 def get_manuscript_metadata(ms_id):
@@ -160,7 +157,6 @@ def open_pdf_in_new_tab(file_path, ms_id):
 
 df_catalog = load_catalog()
 
-# איתחול Session State
 if 'selected_ms_id' not in st.session_state: st.session_state['selected_ms_id'] = ""
 if 'page_number' not in st.session_state: st.session_state['page_number'] = 0
 
@@ -173,20 +169,25 @@ if df_catalog is not None:
     clean_shelves = [s for s in all_shelves if s not in to_remove]
     selected_shelf = st.sidebar.selectbox("בחר או הקלד שם מדור:", ["הכל"] + sorted(clean_shelves))
 
-# 2. חיפוש טקסטואלי ודפדוף
-st.markdown('<p style="text-align: right; font-weight: bold;">חיפוש מהיר בקטלוג:</p>', unsafe_allow_html=True)
-search_term = st.text_input("הזן מילת חיפוש:", placeholder="למשל: פאריטש...", label_visibility="collapsed")
+# 2. חיפוש טקסטואלי חכם
+st.markdown('<p style="text-align: right; font-weight: bold;">חיפוש בקטלוג (לחיפוש כמה אפשרויות, הפרד ביניהן בפסיק):</p>', unsafe_allow_html=True)
+search_term = st.text_input("הזן מילת חיפוש:", placeholder="למשל: אדמו''ר הזקן, אדמור הזקן", label_visibility="collapsed")
 
 if df_catalog is not None and (search_term or selected_shelf != "הכל"):
     f_df = df_catalog.copy()
     if selected_shelf != "הכל": f_df = f_df[f_df['shelf'] == selected_shelf]
-    if search_term: f_df = f_df[f_df['desc'].str.contains(search_term, na=False, case=False)]
+    
+    if search_term:
+        # פיצול לפי פסיקים ויצירת Regex OR
+        search_parts = [p.strip() for p in search_term.split(',') if p.strip()]
+        if search_parts:
+            search_pattern = "|".join([re.escape(part) for part in search_parts])
+            f_df = f_df[f_df['desc'].str.contains(search_pattern, na=False, case=False)]
     
     total_results = len(f_df)
     if total_results > 0:
         results_per_page = 20
         total_pages = (total_results // results_per_page) + (1 if total_results % results_per_page > 0 else 0)
-        
         if st.session_state['page_number'] >= total_pages: st.session_state['page_number'] = 0
 
         st.markdown(f'<p style="text-align: right; font-size: 13px; color: #666;">נמצאו {total_results} תוצאות (עמוד {st.session_state["page_number"] + 1} מתוך {total_pages}):</p>', unsafe_allow_html=True)
@@ -200,14 +201,13 @@ if df_catalog is not None and (search_term or selected_shelf != "הכל"):
             <div class="result-card">
                 <div style="font-weight: bold; color: #1e3d59;">כתב יד: {row['ms_id']}</div>
                 <div style="font-size: 13px; color: #666;">מדור: {row['shelf']} | דפים: {row['pages']}</div>
-                <div style="font-size: 15px; margin-top: 5px;">{desc_h}</div>
+                <div style="font-size: 15px; margin-top: 5px; line-height: 1.5;">{desc_h}</div>
             </div>
             """, unsafe_allow_html=True)
             if st.button(f"בחר {row['ms_id']}", key=f"btn_{row['ms_id']}"):
                 st.session_state['selected_ms_id'] = row['ms_id']
                 st.rerun()
 
-        # כפתורי ניווט
         col_prev, col_page, col_next = st.columns([1, 2, 1])
         with col_next:
             if st.session_state['page_number'] > 0:
@@ -227,14 +227,14 @@ if df_catalog is not None and (search_term or selected_shelf != "הכל"):
 st.divider()
 
 # 3. הזנת ID סופית והורדה
-st.markdown('<p class="input-instruction">להצגת פרטי כתב היד, יש להקיש אנטר (Enter) לאחר הזנת המספר:</p>', unsafe_allow_html=True)
+st.markdown('<p style="text-align: right; font-weight: bold; font-size: 15px;">מספר כתב יד להורדה:</p>', unsafe_allow_html=True)
 ms_id_final = st.text_input("ID", value=st.session_state['selected_ms_id'], label_visibility="collapsed")
 
 if ms_id_final and df_catalog is not None:
     ms_clean = ms_id_final.strip()
     row = df_catalog[df_catalog['ms_id'] == ms_clean]
     if not row.empty:
-        st.info(f"נבחר: {row['desc'].values[0][:200]}...")
+        st.info(f"נבחר: {row['desc'].values[0][:250]}...")
     
     specific_range = st.checkbox("הורדת טווח עמודים ספציפי")
     start_p, end_p = 1, 10
@@ -244,7 +244,7 @@ if ms_id_final and df_catalog is not None:
         with c2: end_p = st.number_input("עד עמוד", min_value=1, value=10)
 
     if st.button("הורד עכשיו"):
-        with st.spinner('מעבד את הבקשה...'):
+        with st.spinner('מעבד...'):
             ms_id = ms_clean
             meta = get_manuscript_metadata(ms_id)
             cover = f"cover_{ms_id}.pdf"
