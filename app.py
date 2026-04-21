@@ -6,6 +6,7 @@ import concurrent.futures
 import streamlit as st
 import gc
 import base64
+import json
 import pandas as pd
 import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
@@ -71,13 +72,13 @@ st.markdown("""
             text-align: right;
             font-weight: bold;
         }
-       
+        
         /* תיקון ריווח שדות */
         .stTextInput {
             margin-bottom: 20px;
         }
     </style>
-   
+    
     <div class="subtle-header">
         <h1>הורדת כתבי יד - ספריית חב"ד</h1>
     </div>
@@ -108,15 +109,25 @@ def load_catalog():
 df_catalog = load_catalog()
 
 def get_manuscript_metadata(ms_id):
+    """ הפונקציה שודרגה לשלוף גם את התיאור וגם את הנתונים החכמים (המזהה המורכב) """
     url = f"https://chabadlibrary.org/catalog/index1.php?frame=main&catalog=mscatalog&mode=details&volno={ms_id}&limit=0&search_mode=simple"
     headers = {'User-Agent': 'Mozilla/5.0'}
+    
+    metadata = {
+        "מספר כתב יד": str(ms_id), 
+        "מדור ומדף": "", 
+        "תיאור": [],
+        "base_url": f"https://s3.wasabisys.com/chabadlibrary/ms/{ms_id}/{ms_id}_page_",
+        "expected_pages": 0
+    }
+    
     try:
         response = requests.get(url, headers=headers, timeout=10)
-        response.encoding = 'utf-8'
+        response.encoding = 'windows-1255'
         soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # 1. חילוץ תיאור טקסטואלי לעמוד השער
         lines = soup.get_text(separator='\n', strip=True).split('\n')
-       
-        metadata = {"מספר כתב יד": str(ms_id), "מדור ומדף": "", "תיאור": []}
         for line in lines:
             line = line.strip()
             if not line or "קטלוג ספריית" in line or "לתצלום הספר" in line or "chabadlibrary.org" in line:
@@ -125,14 +136,34 @@ def get_manuscript_metadata(ms_id):
                 metadata["מדור ומדף"] = line.split("מדור ומדף:")[1].strip()
                 continue
             metadata["תיאור"].append(line)
-        return metadata
-    except:
-        return {"מספר כתב יד": str(ms_id), "מדור ומדף": "לא נמצא", "תיאור": ["לא ניתן היה לשלוף תיאור מלא"]}
+            
+        # 2. חילוץ חכם של המזהה והעמודים מה-JSON המוסתר
+        config_link = next((a['href'] for a in soup.find_all('a', href=True) if "config=" in a['href']), None)
+        if config_link:
+            encoded_str = config_link.split("config=")[1]
+            missing_padding = len(encoded_str) % 4
+            if missing_padding: encoded_str += '=' * (4 - missing_padding)
+            data = json.loads(base64.b64decode(encoded_str))
+            
+            hb_id = data.get('row', {}).get('hb_id', '')
+            pages = data.get('row', {}).get('pages', 0)
+            
+            if hb_id:
+                metadata["base_url"] = f"https://s3.wasabisys.com/chabadlibrary/ms/{hb_id}/{hb_id}_page_"
+                metadata["expected_pages"] = int(pages)
+                
+    except Exception as e:
+        pass
+
+    if not metadata["מדור ומדף"]: metadata["מדור ומדף"] = "לא נמצא"
+    if not metadata["תיאור"]: metadata["תיאור"] = ["לא ניתן היה לשלוף תיאור מלא"]
+    
+    return metadata
 
 def create_cover_page_html(metadata, output_filename, range_text=""):
     desc_html = "".join([f"<p>{line}</p>" for line in metadata['תיאור']])
     range_html = f"<h3>{range_text}</h3>" if range_text else ""
-   
+    
     html_content = f"""
     <!DOCTYPE html>
     <html dir="rtl" lang="he">
@@ -175,7 +206,7 @@ def download_single_page(page_num, base_url, max_retries=3):
 def open_pdf_in_new_tab(file_path, ms_id):
     with open(file_path, "rb") as f:
         base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-   
+    
     html_code = f"""
     <button onclick="
         var win = window.open('', '_blank');
@@ -208,16 +239,15 @@ def log_to_google_form(ms_id, pages_range, processing_time):
 st.markdown('<p class="input-instruction">להצגת פרטי כתב היד, יש להקיש אנטר (Enter) לאחר הזנת המספר:</p>', unsafe_allow_html=True)
 ms_id_input = st.text_input(
     "מספר כתב יד",
-    placeholder="למשל: 1102",
+    placeholder="למשל: 1102 או 3284",
     label_visibility="collapsed"
 )
 
 if ms_id_input and df_catalog is not None:
     ms_id_clean = ms_id_input.strip()
     row = df_catalog[df_catalog['ms_id'] == ms_id_clean]
-   
+    
     if not row.empty:
-        # תצוגת פרטים מלאה באמצעות התיבה המעוצבת
         st.markdown(f"""
         <div class="details-box">
             <div style="font-weight: bold; color: #1e3d59; font-size: 18px; border-bottom: 1px solid #dcd6c3; padding-bottom: 5px; margin-bottom: 10px;">
@@ -225,7 +255,7 @@ if ms_id_input and df_catalog is not None:
             </div>
             <div style="font-size: 15px;">
                 <strong>מדור ומדף:</strong> {row['shelf'].values[0]}<br>
-                <strong>מספר עמודים:</strong> {row['pages'].values[0]}<br><br>
+                <strong>מספר עמודים (מתוך ה-CSV):</strong> {row['pages'].values[0]}<br><br>
                 <strong>תיאור מלא:</strong><br>
                 {row['desc'].values[0]}
             </div>
@@ -247,61 +277,70 @@ if st.button("הורד עכשיו"):
     else:
         ms_id = ms_id_input.strip()
         start_time = time.time()
-       
-        with st.spinner('מעבד את הבקשה...'):
+        
+        with st.spinner('מעבד את הבקשה ומזהה חיבור חכם...'):
             meta = get_manuscript_metadata(ms_id)
             range_txt = f"עמודים {start_page} עד {end_page}" if specific_range else ""
             cover_file = f"cover_{ms_id}.pdf"
             create_cover_page_html(meta, cover_file, range_txt)
-           
-            base_url = f"https://s3.wasabisys.com/chabadlibrary/ms/{ms_id}/{ms_id}_page_"
+            
+            base_url = meta["base_url"]
             chunk_files = [cover_file]
-           
+            
             curr = start_page if specific_range else 1
-            last = end_page if specific_range else 2000
+            last = end_page if specific_range else 3000 # סומכים על עצירת ה-404
+            
             keep_going = True
-           
+            consecutive_404_count = 0  # מונה דפים חסרים ברצף
+            
             status = st.empty()
             progress = st.progress(0)
-           
+            
             while keep_going and curr <= last:
                 batch_size = 20
                 limit = min(curr + batch_size - 1, last)
-                status.info(f"מוריד דפים {curr} עד {limit}...")
-               
+                
+                status.info(f"מוריד וסורק דפים {curr} עד {limit}...")
+                
                 results = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=batch_size) as executor:
                     futures = {executor.submit(download_single_page, p, base_url): p for p in range(curr, limit + 1)}
                     for f in concurrent.futures.as_completed(futures):
                         results.append(f.result())
-               
+                
+                # מיון התוצאות לסדר רציף לבדיקה מדויקת של הרצף
                 results.sort(key=lambda x: x[0])
                 chunk_merger = PdfWriter()
                 temp_list = []
-               
+                
                 for p_num, content, code in results:
-                    if content is None:
-                        if code == 404: status.success("הושלמו כל הדפים הקיימים.")
-                        keep_going = False
-                        break
-                   
-                    temp_name = f"temp_{ms_id}_{p_num}.pdf"
-                    with open(temp_name, 'wb') as f:
-                        f.write(content)
-                    chunk_merger.append(temp_name)
-                    temp_list.append(temp_name)
-               
+                    if content is None or code == 404:
+                        consecutive_404_count += 1
+                        
+                        # עצירה לאחר 3 דפים חסרים ברצף
+                        if consecutive_404_count >= 3:
+                            status.success(f"הסריקה הושלמה. ההורדה נעצרה לאחר שדפים {p_num-2}, {p_num-1} ו-{p_num} לא נמצאו בשרת.")
+                            keep_going = False
+                            break
+                    else:
+                        consecutive_404_count = 0 # איפוס המונה ברגע שיש דף תקין
+                        temp_name = f"temp_{ms_id}_{p_num}.pdf"
+                        with open(temp_name, 'wb') as f:
+                            f.write(content)
+                        chunk_merger.append(temp_name)
+                        temp_list.append(temp_name)
+                
                 if temp_list:
                     chunk_name = f"chunk_{ms_id}_{curr}.pdf"
                     chunk_merger.write(chunk_name)
                     chunk_files.append(chunk_name)
-               
+                
                 chunk_merger.close()
                 for f in temp_list:
                     if os.path.exists(f): os.remove(f)
-               
+                
                 curr = limit + 1
-                progress.progress(min(curr / 500, 1.0))
+                progress.progress(min(curr / 2000, 1.0))
 
             final_file = f"Manuscript_{ms_id}.pdf"
             final_merger = PdfWriter()
@@ -309,18 +348,18 @@ if st.button("הורד עכשיו"):
                 final_merger.append(f)
             final_merger.write(final_file)
             final_merger.close()
-           
+            
             for f in chunk_files:
                 if os.path.exists(f): os.remove(f)
-           
+            
             duration = round(time.time() - start_time, 1)
             status.empty()
             progress.empty()
             st.success(f"הקובץ מוכן להורדה! (זמן תהליך: {duration} שניות)")
-           
-            pages_downloaded = f"{start_page}-{end_page}" if specific_range else "הכל"
+            
+            pages_downloaded = f"{start_page}-{end_page}" if specific_range else "הורדה מלאה"
             log_to_google_form(ms_id, pages_downloaded, duration)
-           
+            
             st.divider()
             col1, col2 = st.columns(2)
             with col1:
@@ -328,8 +367,6 @@ if st.button("הורד עכשיו"):
                     st.download_button("שמור במחשב", f, file_name=final_file, use_container_width=True)
             with col2:
                 open_pdf_in_new_tab(final_file, ms_id)
-               
+                
             if os.path.exists(final_file): os.remove(final_file)
             gc.collect()
-
- 
