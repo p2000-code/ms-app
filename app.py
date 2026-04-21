@@ -16,6 +16,12 @@ from weasyprint import HTML
 # 1. הגדרות תצוגה
 st.set_page_config(page_title="הורדת כתבי יד - ספריית חבדי", layout="centered")
 
+# --- אתחול משתני זיכרון (Session State) ---
+if "pdf_data" not in st.session_state:
+    st.session_state.pdf_data = None
+    st.session_state.ms_id = None
+    st.session_state.duration = None
+
 # 2. עיצוב ממשק יציב ונקי (CSS)
 st.markdown("""
     <style>
@@ -109,7 +115,6 @@ def load_catalog():
 df_catalog = load_catalog()
 
 def get_manuscript_metadata(ms_id):
-    """ הפונקציה שודרגה לשלוף גם את התיאור וגם את הנתונים החכמים (המזהה המורכב) """
     url = f"https://chabadlibrary.org/catalog/index1.php?frame=main&catalog=mscatalog&mode=details&volno={ms_id}&limit=0&search_mode=simple"
     headers = {'User-Agent': 'Mozilla/5.0'}
     
@@ -123,10 +128,9 @@ def get_manuscript_metadata(ms_id):
     
     try:
         response = requests.get(url, headers=headers, timeout=10)
-        response.encoding = 'utf-8'
+        response.encoding = 'utf-8' # תוקן ל-UTF-8 כדי למנוע ג'יבריש
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # 1. חילוץ תיאור טקסטואלי לעמוד השער
         lines = soup.get_text(separator='\n', strip=True).split('\n')
         for line in lines:
             line = line.strip()
@@ -137,7 +141,6 @@ def get_manuscript_metadata(ms_id):
                 continue
             metadata["תיאור"].append(line)
             
-        # 2. חילוץ חכם של המזהה והעמודים מה-JSON המוסתר
         config_link = next((a['href'] for a in soup.find_all('a', href=True) if "config=" in a['href']), None)
         if config_link:
             encoded_str = config_link.split("config=")[1]
@@ -203,9 +206,9 @@ def download_single_page(page_num, base_url, max_retries=3):
             time.sleep(1)
     return page_num, None, 500
 
-def open_pdf_in_new_tab(file_path, ms_id):
-    with open(file_path, "rb") as f:
-        base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+# הפונקציה עודכנה כדי לקבל את נתוני ה-PDF ישירות מהזיכרון במקום לקרוא קובץ
+def open_pdf_in_new_tab(pdf_data, ms_id):
+    base64_pdf = base64.b64encode(pdf_data).decode('utf-8')
     
     html_code = f"""
     <button onclick="
@@ -275,6 +278,9 @@ if st.button("הורד עכשיו"):
     if not ms_id_input:
         st.warning("אנא הכנס מספר כתב יד.")
     else:
+        # איפוס נתוני הזיכרון לפני התחלת הורדה חדשה
+        st.session_state.pdf_data = None
+        
         ms_id = ms_id_input.strip()
         start_time = time.time()
         
@@ -288,10 +294,10 @@ if st.button("הורד עכשיו"):
             chunk_files = [cover_file]
             
             curr = start_page if specific_range else 1
-            last = end_page if specific_range else 3000 # סומכים על עצירת ה-404
+            last = end_page if specific_range else 3000
             
             keep_going = True
-            consecutive_404_count = 0  # מונה דפים חסרים ברצף
+            consecutive_404_count = 0 
             
             status = st.empty()
             progress = st.progress(0)
@@ -308,7 +314,6 @@ if st.button("הורד עכשיו"):
                     for f in concurrent.futures.as_completed(futures):
                         results.append(f.result())
                 
-                # מיון התוצאות לסדר רציף לבדיקה מדויקת של הרצף
                 results.sort(key=lambda x: x[0])
                 chunk_merger = PdfWriter()
                 temp_list = []
@@ -316,14 +321,11 @@ if st.button("הורד עכשיו"):
                 for p_num, content, code in results:
                     if content is None or code == 404:
                         consecutive_404_count += 1
-                        
-                        # עצירה לאחר 3 דפים חסרים ברצף
                         if consecutive_404_count >= 3:
-                            status.success(f"הסריקה הושלמה. ההורדה נעצרה לאחר שדפים {p_num-2}, {p_num-1} ו-{p_num} לא נמצאו בשרת.")
                             keep_going = False
                             break
                     else:
-                        consecutive_404_count = 0 # איפוס המונה ברגע שיש דף תקין
+                        consecutive_404_count = 0
                         temp_name = f"temp_{ms_id}_{p_num}.pdf"
                         with open(temp_name, 'wb') as f:
                             f.write(content)
@@ -349,30 +351,36 @@ if st.button("הורד עכשיו"):
             final_merger.write(final_file)
             final_merger.close()
             
+            # --- כאן מתבצע השמירה לזיכרון ---
+            with open(final_file, "rb") as f:
+                st.session_state.pdf_data = f.read()
+            st.session_state.ms_id = ms_id
+            st.session_state.duration = round(time.time() - start_time, 1)
+            
+            # ניקוי קבצים מהשרת (כבר שמרנו בזיכרון)
             for f in chunk_files:
                 if os.path.exists(f): os.remove(f)
+            if os.path.exists(final_file): os.remove(final_file)
             
-            duration = round(time.time() - start_time, 1)
             status.empty()
             progress.empty()
-            st.success(f"הקובץ מוכן להורדה! (זמן תהליך: {duration} שניות)")
             
             pages_downloaded = f"{start_page}-{end_page}" if specific_range else "הורדה מלאה"
-            log_to_google_form(ms_id, pages_downloaded, duration)
-            
-            st.divider()
-            col1, col2 = st.columns(2)
-            with col1:
-                with open(final_file, "rb") as f:
-                    st.download_button(
-                        label="שמור במחשב", 
-                        data=f, 
-                        file_name=final_file, 
-                        mime="application/pdf", 
-                        use_container_width=True
-                    )
-            with col2:
-                open_pdf_in_new_tab(final_file, ms_id)
-                
-            if os.path.exists(final_file): os.remove(final_file)
+            log_to_google_form(ms_id, pages_downloaded, st.session_state.duration)
             gc.collect()
+
+# --- הצגת הכפתורים מחוץ לבלוק העיבוד (כך שהם שורדים רענון) ---
+if st.session_state.pdf_data is not None:
+    st.success(f"הקובץ מוכן להורדה! (זמן תהליך: {st.session_state.duration} שניות)")
+    st.divider()
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button(
+            label="שמור במחשב", 
+            data=st.session_state.pdf_data, 
+            file_name=f"Manuscript_{st.session_state.ms_id}.pdf", 
+            mime="application/pdf", 
+            use_container_width=True
+        )
+    with col2:
+        open_pdf_in_new_tab(st.session_state.pdf_data, st.session_state.ms_id)
