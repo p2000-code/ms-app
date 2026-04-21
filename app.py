@@ -364,8 +364,13 @@ if st.button("הורד עכשיו"):
             col1, col2 = st.columns(2)
             with col1:
                 with open(final_file, "rb") as f:
-                    st.download_button("שמור במחשב", f, file_name=final_file, use_container_width=True)
-            with col2:
+                    st.download_button(
+                        label="שמור במחשב", 
+                        data=f, 
+                        file_name=final_file, 
+                        mime="application/pdf", 
+                        use_container_width=True
+                    )            with col2:
                 open_pdf_in_new_tab(final_file, ms_id)
                 
             if os.path.exists(final_file): os.remove(final_file)
