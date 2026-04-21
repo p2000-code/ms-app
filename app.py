@@ -123,7 +123,7 @@ def get_manuscript_metadata(ms_id):
     
     try:
         response = requests.get(url, headers=headers, timeout=10)
-        response.encoding = 'windows-1255'
+        response.encoding = 'utf-8'
         soup = BeautifulSoup(response.text, 'html.parser')
         
         # 1. חילוץ תיאור טקסטואלי לעמוד השער
