@@ -175,7 +175,7 @@ def create_cover_page_html(metadata, output_filename, range_text=""):
             h1 {{ font-size: 50px; margin-bottom: 20px; }}
             h2 {{ font-size: 30px; margin-bottom: 20px; font-weight: normal; }}
             h3 {{ font-size: 24px; margin-bottom: 50px; font-weight: normal; }}
-            .description { font-size: 22px; line-height: 1.6; max-width: 80%; margin: 0 auto; text-align: right; }
+            .description {{ font-size: 22px; line-height: 1.6; max-width: 80%; margin: 0 auto; text-align: right; }}
             p {{ margin: 8px 0; }}
         </style>
     </head>
@@ -370,7 +370,8 @@ if st.button("הורד עכשיו"):
                         file_name=final_file, 
                         mime="application/pdf", 
                         use_container_width=True
-                    )            with col2:
+                    )
+            with col2:
                 open_pdf_in_new_tab(final_file, ms_id)
                 
             if os.path.exists(final_file): os.remove(final_file)
