@@ -175,7 +175,7 @@ def create_cover_page_html(metadata, output_filename, range_text=""):
             h1 {{ font-size: 50px; margin-bottom: 20px; }}
             h2 {{ font-size: 30px; margin-bottom: 20px; font-weight: normal; }}
             h3 {{ font-size: 24px; margin-bottom: 50px; font-weight: normal; }}
-            .description {{ font-size: 22px; line-height: 1.6; max-width: 80%; margin: 0 auto; text-align: right; border-right: 3px solid #b8860b; padding-right: 15px; }}
+            .description { font-size: 22px; line-height: 1.6; max-width: 80%; margin: 0 auto; text-align: right; }
             p {{ margin: 8px 0; }}
         </style>
     </head>
