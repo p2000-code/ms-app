@@ -8,6 +8,7 @@ import gc
 import base64
 import json
 import pandas as pd
+import shutil  # נוסף עבור פתרון התיקייה הסטטית
 import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
 from pypdf import PdfWriter
@@ -19,6 +20,7 @@ st.set_page_config(page_title="הורדת כתבי יד - ספריית חבדי"
 # --- אתחול משתני זיכרון (Session State) ---
 if "pdf_data" not in st.session_state:
     st.session_state.pdf_data = None
+    st.session_state.pdf_filename = None  # נוסף עבור הקישור הישיר
     st.session_state.ms_id = None
     st.session_state.duration = None
 
@@ -206,24 +208,6 @@ def download_single_page(page_num, base_url, max_retries=3):
             time.sleep(1)
     return page_num, None, 500
 
-# הפונקציה עודכנה כדי לקבל את נתוני ה-PDF ישירות מהזיכרון במקום לקרוא קובץ
-def open_pdf_in_new_tab(pdf_data, ms_id):
-    base64_pdf = base64.b64encode(pdf_data).decode('utf-8')
-    
-    html_code = f"""
-    <button onclick="
-        var win = window.open('', '_blank');
-        if(win) {{
-            win.document.write('<title>כתב יד {ms_id}</title><iframe src=\\'data:application/pdf;base64,{base64_pdf}\\' frameborder=\\'0\\' style=\\'border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%; position:absolute;\\'></iframe>');
-        }} else {{
-            alert('נא לאפשר חלונות קופצים בדפדפן.');
-        }}
-    " style="cursor: pointer; padding: 10px 20px; color: white; background-color: #2b2b36; border: 1px solid #4a4a5a; border-radius: 5px; font-size: 16px; font-weight: bold; width: 100%; height: 45px;">
-        צפה בכתב היד בחלונית חדשה
-    </button>
-    """
-    components.html(html_code, height=60)
-
 def log_to_google_form(ms_id, pages_range, processing_time):
     url = "https://docs.google.com/forms/d/e/1FAIpQLSenYAwJHVW5jV-hU6hKF5b16LU6ku-v6Pqz6vCq2LFjSe40qA/formResponse"
     form_data = {
@@ -278,8 +262,9 @@ if st.button("הורד עכשיו"):
     if not ms_id_input:
         st.warning("אנא הכנס מספר כתב יד.")
     else:
-        # איפוס נתוני הזיכרון לפני התחלת הורדה חדשה
+        # איפוס נתוני הזיכרון
         st.session_state.pdf_data = None
+        st.session_state.pdf_filename = None
         
         ms_id = ms_id_input.strip()
         start_time = time.time()
@@ -305,7 +290,6 @@ if st.button("הורד עכשיו"):
             while keep_going and curr <= last:
                 batch_size = 20
                 limit = min(curr + batch_size - 1, last)
-                
                 status.info(f"מוריד וסורק דפים {curr} עד {limit}...")
                 
                 results = []
@@ -351,13 +335,29 @@ if st.button("הורד עכשיו"):
             final_merger.write(final_file)
             final_merger.close()
             
-            # --- כאן מתבצע השמירה לזיכרון ---
+            # --- שלב פתרון התיקייה הסטטית ---
+            os.makedirs("static", exist_ok=True)
+            
+            # ניקוי קבצים ישנים (בני יותר מ-15 דקות)
+            now = time.time()
+            for f in os.listdir("static"):
+                f_path = os.path.join("static", f)
+                if os.path.isfile(f_path) and os.path.getmtime(f_path) < now - 900:
+                    os.remove(f_path)
+
+            # העתקת הקובץ לתיקייה הציבורית
+            static_filename = f"Manuscript_{ms_id}.pdf"
+            static_path = os.path.join("static", static_filename)
+            shutil.copy(final_file, static_path)
+
+            # שמירה לזיכרון ה-session
             with open(final_file, "rb") as f:
                 st.session_state.pdf_data = f.read()
+            st.session_state.pdf_filename = static_filename
             st.session_state.ms_id = ms_id
             st.session_state.duration = round(time.time() - start_time, 1)
             
-            # ניקוי קבצים מהשרת (כבר שמרנו בזיכרון)
+            # ניקוי קבצי עבודה מהשרת
             for f in chunk_files:
                 if os.path.exists(f): os.remove(f)
             if os.path.exists(final_file): os.remove(final_file)
@@ -369,9 +369,9 @@ if st.button("הורד עכשיו"):
             log_to_google_form(ms_id, pages_downloaded, st.session_state.duration)
             gc.collect()
 
-# --- הצגת הכפתורים מחוץ לבלוק העיבוד (כך שהם שורדים רענון) ---
+# --- הצגת הכפתורים (שורדים רענון) ---
 if st.session_state.pdf_data is not None:
-    st.success(f"הקובץ מוכן להורדה! (זמן תהליך: {st.session_state.duration} שניות)")
+    st.success(f"הקובץ מוכן! (זמן תהליך: {st.session_state.duration} שניות)")
     st.divider()
     col1, col2 = st.columns(2)
     with col1:
@@ -383,4 +383,15 @@ if st.session_state.pdf_data is not None:
             use_container_width=True
         )
     with col2:
-        open_pdf_in_new_tab(st.session_state.pdf_data, st.session_state.ms_id)
+        # הקישור הישיר לתיקייה הסטטית (ללא Base64)
+        file_url = f"static/{st.session_state.pdf_filename}"
+        html_link = f"""
+        <a href="{file_url}" target="_blank" 
+           style="display: flex; align-items: center; justify-content: center; 
+                  padding: 10px 20px; color: white; background-color: #2b2b36; 
+                  border: 1px solid #4a4a5a; border-radius: 5px; text-decoration: none; 
+                  font-size: 16px; font-weight: bold; width: 100%; height: 45px; box-sizing: border-box;">
+            צפה בכתב היד (מהיר)
+        </a>
+        """
+        st.markdown(html_link, unsafe_allow_html=True)
