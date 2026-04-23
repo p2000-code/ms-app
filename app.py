@@ -384,7 +384,7 @@ if st.session_state.pdf_data is not None:
         )
     with col2:
         # הקישור הישיר לתיקייה הסטטית (ללא Base64)
-        file_url = f"static/{st.session_state.pdf_filename}"
+        file_url = f"app/static/{st.session_state.pdf_filename}"
         html_link = f"""
         <a href="{file_url}" target="_blank" 
            style="display: flex; align-items: center; justify-content: center; 
