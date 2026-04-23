@@ -391,7 +391,7 @@ if st.session_state.pdf_data is not None:
                   padding: 10px 20px; color: white; background-color: #2b2b36; 
                   border: 1px solid #4a4a5a; border-radius: 5px; text-decoration: none; 
                   font-size: 16px; font-weight: bold; width: 100%; height: 45px; box-sizing: border-box;">
-            צפה בכתב היד (מהיר)
+            צפה בכתב היד
         </a>
         """
         st.markdown(html_link, unsafe_allow_html=True)
