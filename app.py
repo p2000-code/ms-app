@@ -345,8 +345,9 @@ if st.button("הורד עכשיו"):
                 if os.path.isfile(f_path) and os.path.getmtime(f_path) < now - 900:
                     os.remove(f_path)
 
-            # העתקת הקובץ לתיקייה הציבורית
-            static_filename = f"Manuscript_{ms_id}.pdf"
+            # העתקת הקובץ לתיקייה הציבורית (עם חותמת זמן למניעת בעיות מטמון)
+            timestamp = int(time.time())
+            static_filename = f"Manuscript_{ms_id}_{timestamp}.pdf"
             static_path = os.path.join("static", static_filename)
             shutil.copy(final_file, static_path)
 
